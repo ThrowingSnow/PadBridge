@@ -19,6 +19,9 @@ versioned separately by its magic (`PBG1` = protocol v1).
   (virtual "PadBridge Keyboard/Mouse" via uinput, hi-res scrolling,
   keys released after 500 ms of silence).
 
+- padbridge-netpad links its ALSA port both ways to a `snd-virmidi` device
+  when present, so DAWs that only list rawmidi devices (Bitwig on Linux) see it.
+
 ### Changed
 - padbridge-netpad waits on the socket and all virtual pads with `poll()`
   instead of a 100 ms receive timeout (faster FF answers and rumble).

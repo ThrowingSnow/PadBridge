@@ -24,5 +24,17 @@ sudo ufw allow in on <lan-interface> from <lan-subnet>/24 to any port 48100 prot
 sudo ufw allow in on tailscale0 to any port 48100 proto udp
 ```
 
+Bitwig (and other apps that only list ALSA rawmidi devices) do not see the
+sequencer port "PadBridge". Load `snd-virmidi`; the daemon links to it
+automatically and the DAW shows "VirMIDI 9-0":
+
+```sh
+echo snd-virmidi | sudo tee /etc/modules-load.d/padbridge-virmidi.conf
+echo 'options snd-virmidi midi_devs=1 index=9 id=PadBridge' | sudo tee /etc/modprobe.d/padbridge-virmidi.conf
+sudo modprobe snd-virmidi
+```
+
+(`index=9` keeps the virtual card from taking a low index before the audio cards at boot.)
+
 Behaviour: pads are created on the first packet and kept for the daemon's
 lifetime (games enumerate once); 500 ms without packets releases all inputs.
