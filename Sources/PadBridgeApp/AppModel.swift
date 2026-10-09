@@ -1,6 +1,7 @@
 import Foundation
 import PadCore
 import PadMIDI
+import PadNet
 import PadUSB
 
 /// Bridges the engine (device and CoreMIDI threads, ~250 Hz) to SwiftUI (main thread).
@@ -21,9 +22,19 @@ final class AppModel: ObservableObject {
     @Published private(set) var clock = MIDIBridge.ClockStatus(running: false, bpm: nil, bar: 1, beat: 1)
     @Published private(set) var ringMode: RingDriver.Mode = .manual
 
+    @Published var netSettings: NetPadOutput.Settings {
+        didSet {
+            net?.apply(netSettings)
+            try? SettingsStore.save(netSettings)
+        }
+    }
+    @Published private(set) var netStatus = NetPadOutput.Status.off
+    @Published private(set) var netKeyHex: String?
+
     let manager = ControllerManager(backends: [USBBackend()])
     private let ring: RingDriver
     private var midi: MIDIBridge?
+    private var net: NetPadOutput?
 
     private let pendingLock = NSLock()
     nonisolated(unsafe) private var pendingStates: [String: ControllerState] = [:]
@@ -33,6 +44,7 @@ final class AppModel: ObservableObject {
 
     init() {
         midiMapping = SettingsStore.loadMIDIMapping()
+        netSettings = SettingsStore.loadNetSettings()
         ring = RingDriver(manager: manager)
 
         manager.addListener { [weak self] event in self?.handle(event) }
@@ -50,6 +62,17 @@ final class AppModel: ObservableObject {
             midiAvailable = true
         } catch {
             append("MIDI nicht verfügbar: \(error)")
+        }
+        do {
+            let output = NetPadOutput(manager: manager, key: try NetPadKey.loadOrCreate())
+            output.onStatus = { [weak self] status in
+                Task { @MainActor in self?.netStatus = status }
+            }
+            output.apply(netSettings)
+            net = output
+            netKeyHex = NetPadKey.hexString()
+        } catch {
+            append("Netzwerk-Schlüssel konnte nicht erstellt werden: \(error.localizedDescription)")
         }
         manager.start()
 

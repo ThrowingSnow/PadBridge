@@ -1,0 +1,14 @@
+[package]
+name = "padbridge-netpad"
+version = "0.1.0"
+edition = "2021"
+description = "Receives PadBridge gamepad packets over UDP and exposes them as a uinput Xbox 360 pad"
+
+[dependencies]
+evdev = "0.12"
+hmac = "0.12"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -5,8 +5,8 @@ directly over USB (IOUSBHost, user space) and routes it to:
 
 - **MIDI**: virtual CoreMIDI port "PadBridge", every control mapped to a CC/note;
   MIDI clock in drives the LED ring (beat blink, bar 1-4 -> LED 1-4)
-- **Network gamepad**: UDP to a small daemon on Linux that creates a real
-  uinput Xbox 360 pad, e.g. for Wine/Proton games streamed with Sunshine/Moonlight *(planned)*
+- **Network gamepad**: signed UDP to `linux/padbridge-netpad`, which creates a real
+  uinput Xbox 360 pad on Linux, e.g. for Wine/Proton games streamed with Sunshine/Moonlight
 - **Keyboard/mouse** emulation *(planned)*
 
 Why: the old 360Controller kext is blocked on macOS 14 (IOHIDFamily kexts are
@@ -28,6 +28,8 @@ GCController (later) ─┘      (+ rumble/LED back)                          �
   knows about USB or a specific pad.
 - `PadMIDI`: mapping (`MIDIMapper`, pure), clock following (`MIDIClockTracker`, pure),
   CoreMIDI port (`MIDIEndpoint`), glue (`MIDIBridge`). Settings: `~/Library/Application Support/PadBridge/`.
+- `PadNet`: net gamepad protocol (`NetPadProtocol`, shares a test vector with the
+  Rust side), key handling, UDP sender with keepalive and ping.
 - `PadUSB`: raw USB backend. `Xbox360Protocol` is pure byte parsing (unit tested);
   `Xbox360Device` does the IOUSBHost I/O; `USBBackend` handles hotplug.
 - **Adding a controller family** means adding a backend (or a protocol + device
@@ -53,7 +55,8 @@ scripts/bundle.sh                  # build/PadBridge.app
 2. ✅ MIDI output: per-control CC/note table, channel, deadzones, momentary/toggle, invert;
    MIDI clock in -> LED ring sync; random LED mode
    - later: 14-bit, relative mode, shift layer, rumble from MIDI
-3. Network gamepad: UDP protocol + Rust uinput daemon for the Linux host
+3. ✅ Network gamepad: HMAC-signed UDP protocol + Rust uinput daemon, latency display
+   - next: rumble from the game back to the pad
 4. Keyboard/mouse output
 5. Profiles (Guide + D-Pad to switch, shown on the LED ring)
 6. More backends: IOHID, GameController.framework

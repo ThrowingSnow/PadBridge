@@ -16,6 +16,7 @@ struct PadBridgeApp: App {
             TabView {
                 LiveMonitorView().tabItem { Text("Monitor") }
                 MIDIView().tabItem { Text("MIDI") }
+                NetworkView().tabItem { Text("Netzwerk") }
             }
             .environmentObject(model)
             .frame(minWidth: 980, minHeight: 620)

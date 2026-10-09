@@ -30,9 +30,12 @@ let package = Package(
             linkerSettings: [.linkedFramework("CoreMIDI")]
         ),
 
-        .executableTarget(name: "padbridge-cli", dependencies: ["PadCore", "PadUSB"]),
-        .executableTarget(name: "PadBridgeApp", dependencies: ["PadCore", "PadUSB", "PadMIDI"]),
+        // Output: UDP to padbridge-netpad (Linux uinput), see linux/padbridge-netpad.
+        .target(name: "PadNet", dependencies: ["PadCore"]),
 
-        .testTarget(name: "PadCoreTests", dependencies: ["PadCore", "PadUSB", "PadMIDI"]),
+        .executableTarget(name: "padbridge-cli", dependencies: ["PadCore", "PadUSB"]),
+        .executableTarget(name: "PadBridgeApp", dependencies: ["PadCore", "PadUSB", "PadMIDI", "PadNet"]),
+
+        .testTarget(name: "PadCoreTests", dependencies: ["PadCore", "PadUSB", "PadMIDI", "PadNet"]),
     ]
 )

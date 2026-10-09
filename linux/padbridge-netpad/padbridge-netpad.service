@@ -1,0 +1,13 @@
+[Unit]
+Description=PadBridge net gamepad (UDP -> uinput Xbox 360 pad)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/padbridge-netpad
+Restart=on-failure
+RestartSec=2
+# Input latency matters more than throughput here.
+Nice=-5
+
+[Install]
+WantedBy=default.target
