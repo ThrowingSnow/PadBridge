@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Version comes from the latest git tag (v0.1.0 -> 0.1.0); "-dev" outside a tag.
-VERSION="$(git describe --tags --exact-match 2>/dev/null | sed 's/^v//')"
+VERSION="$(git describe --tags --exact-match 2>/dev/null | sed 's/^v//' || true)"
 VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')-dev}"
 BUILD="$(git rev-list --count HEAD)"
 
