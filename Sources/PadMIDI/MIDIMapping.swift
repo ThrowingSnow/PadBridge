@@ -11,7 +11,16 @@ public enum ButtonMode: String, Codable, CaseIterable, Sendable {
     case toggle
 }
 
-/// How one control is sent. Axes always send CC; `kind` only applies to buttons.
+/// Where a button's "on" value (note velocity, or CC value) comes from.
+public enum VelocitySource: String, Codable, CaseIterable, Sendable {
+    /// `MIDIBinding.velocity`.
+    case fixed
+    /// How far the trigger is pulled at the moment of the press.
+    case leftTrigger, rightTrigger
+}
+
+/// How one control is sent. Axes always send CC; `kind`, `buttonMode` and the
+/// velocity fields only apply to buttons.
 public struct MIDIBinding: Codable, Equatable, Sendable, Identifiable {
     public var control: Control
     public var enabled: Bool
@@ -21,17 +30,37 @@ public struct MIDIBinding: Codable, Equatable, Sendable, Identifiable {
     public var buttonMode: ButtonMode
     /// Axes only: flip direction (sticks) or range (triggers).
     public var invert: Bool
+    public var velocitySource: VelocitySource
+    /// 1...127, used when `velocitySource == .fixed`.
+    public var velocity: Int
 
     public var id: Control { control }
 
     public init(control: Control, number: Int, kind: MIDIMessageKind = .cc, enabled: Bool = true,
-                buttonMode: ButtonMode = .momentary, invert: Bool = false) {
+                buttonMode: ButtonMode = .momentary, invert: Bool = false,
+                velocitySource: VelocitySource = .fixed, velocity: Int = 127) {
         self.control = control
         self.enabled = enabled
         self.kind = kind
         self.number = number
         self.buttonMode = buttonMode
         self.invert = invert
+        self.velocitySource = velocitySource
+        self.velocity = velocity
+    }
+
+    // Fields added after the first release default when missing, so older
+    // saved mappings keep loading instead of falling back to the defaults.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        control = try c.decode(Control.self, forKey: .control)
+        number = try c.decode(Int.self, forKey: .number)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        kind = try c.decodeIfPresent(MIDIMessageKind.self, forKey: .kind) ?? .cc
+        buttonMode = try c.decodeIfPresent(ButtonMode.self, forKey: .buttonMode) ?? .momentary
+        invert = try c.decodeIfPresent(Bool.self, forKey: .invert) ?? false
+        velocitySource = try c.decodeIfPresent(VelocitySource.self, forKey: .velocitySource) ?? .fixed
+        velocity = try c.decodeIfPresent(Int.self, forKey: .velocity) ?? 127
     }
 }
 
@@ -154,9 +183,9 @@ public struct MIDIMapper {
                     }
                     on = toggled.contains(button)
                 }
-                let value = on ? 127 : 0
+                let value = on ? velocity(for: binding, state: state) : 0
                 if !firstSend || on || binding.kind == .cc {
-                    out.append(message(binding, on: on))
+                    out.append(message(binding, value: value))
                 }
                 lastSent[binding.control] = value
             }
@@ -164,12 +193,24 @@ public struct MIDIMapper {
         return out
     }
 
-    private func message(_ binding: MIDIBinding, on: Bool) -> MIDIMessage {
+    /// `value` 0 means off; anything else is the on value / velocity.
+    private func message(_ binding: MIDIBinding, value: Int) -> MIDIMessage {
         switch binding.kind {
-        case .cc: return .controlChange(channel: mapping.channel, number: binding.number, value: on ? 127 : 0)
-        case .note: return on ? .noteOn(channel: mapping.channel, note: binding.number, velocity: 127)
-                              : .noteOff(channel: mapping.channel, note: binding.number)
+        case .cc: return .controlChange(channel: mapping.channel, number: binding.number, value: value)
+        case .note: return value > 0 ? .noteOn(channel: mapping.channel, note: binding.number, velocity: value)
+                                     : .noteOff(channel: mapping.channel, note: binding.number)
         }
+    }
+
+    /// 1...127: never 0, because note-on with velocity 0 means note-off.
+    func velocity(for binding: MIDIBinding, state: ControllerState) -> Int {
+        let raw: Int
+        switch binding.velocitySource {
+        case .fixed: raw = binding.velocity
+        case .leftTrigger: raw = Self.value7(state[.leftTrigger], axis: .leftTrigger, mapping: mapping, invert: false)
+        case .rightTrigger: raw = Self.value7(state[.rightTrigger], axis: .rightTrigger, mapping: mapping, invert: false)
+        }
+        return min(max(raw, 1), 127)
     }
 
     /// Axis value -> 0...127. Sticks centre on 64.
@@ -188,5 +229,23 @@ public struct MIDIMapper {
         guard magnitude > dz else { return 0 }
         let scaled = min((magnitude - dz) / (1 - dz), 1)
         return v < 0 ? -scaled : scaled
+    }
+}
+
+// In an extension so the memberwise initializer stays available.
+extension MIDIMapping {
+    /// Missing fields fall back to the defaults instead of failing the whole file.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = MIDIMapping.default
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+        channel = try c.decodeIfPresent(Int.self, forKey: .channel) ?? d.channel
+        stickDeadzone = try c.decodeIfPresent(Float.self, forKey: .stickDeadzone) ?? d.stickDeadzone
+        triggerDeadzone = try c.decodeIfPresent(Float.self, forKey: .triggerDeadzone) ?? d.triggerDeadzone
+        bindings = try c.decodeIfPresent([MIDIBinding].self, forKey: .bindings) ?? d.bindings
+        // Controls added in newer versions get their default binding.
+        for binding in d.bindings where !bindings.contains(where: { $0.control == binding.control }) {
+            bindings.append(binding)
+        }
     }
 }

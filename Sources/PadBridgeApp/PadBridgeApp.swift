@@ -18,7 +18,7 @@ struct PadBridgeApp: App {
                 MIDIView().tabItem { Text("MIDI") }
             }
             .environmentObject(model)
-            .frame(minWidth: 820, minHeight: 620)
+            .frame(minWidth: 980, minHeight: 620)
         }
         MenuBarExtra {
             if model.devices.isEmpty {

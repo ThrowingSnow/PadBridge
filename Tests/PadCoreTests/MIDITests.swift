@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import PadCore
 @testable import PadMIDI
@@ -114,5 +115,54 @@ struct MIDIClockTests {
         #expect(MIDIEndpoint.clockMessage(0x10FC_0000) == .stop)
         #expect(MIDIEndpoint.clockMessage(0x10F2_0001) == .songPosition(128))
         #expect(MIDIEndpoint.clockMessage(0x20B0_1440) == nil, "channel voice is not clock")
+    }
+}
+
+struct MIDIVelocityTests {
+    private func mapping(_ edit: (inout MIDIBinding) -> Void) -> MIDIMapping {
+        var m = MIDIMapping.default
+        let index = m.bindings.firstIndex { $0.control == .button(.a) }!
+        edit(&m.bindings[index])
+        return m
+    }
+
+    @Test func fixedVelocityIsUsedForNotesAndCC() {
+        var mapper = MIDIMapper(mapping: mapping { $0.kind = .note; $0.number = 60; $0.velocity = 90 })
+        _ = mapper.process(ControllerState())
+        #expect(mapper.process(ControllerState(pressed: [.a])) == [.noteOn(channel: 1, note: 60, velocity: 90)])
+
+        var ccMapper = MIDIMapper(mapping: mapping { $0.velocity = 42 })
+        _ = ccMapper.process(ControllerState())
+        #expect(ccMapper.process(ControllerState(pressed: [.a])) == [.controlChange(channel: 1, number: 102, value: 42)])
+    }
+
+    @Test func triggerSetsVelocity() {
+        var m = mapping { $0.kind = .note; $0.number = 60; $0.velocitySource = .rightTrigger }
+        m.bindings.removeAll { if case .axis = $0.control { return true } else { return false } }
+        var mapper = MIDIMapper(mapping: m)
+        _ = mapper.process(ControllerState())
+        let half = ControllerState(pressed: [.a], axes: [.rightTrigger: 0.5])
+        let velocity = mapper.process(half).first?.data2 ?? 0
+        #expect(velocity > 55 && velocity < 70)
+    }
+
+    @Test func releasedTriggerStillPlaysTheNote() {
+        var mapper = MIDIMapper(mapping: mapping { $0.kind = .note; $0.number = 60; $0.velocitySource = .leftTrigger })
+        _ = mapper.process(ControllerState())
+        #expect(mapper.process(ControllerState(pressed: [.a])).contains(.noteOn(channel: 1, note: 60, velocity: 1)))
+    }
+
+    @Test func oldSavedMappingStillLoads() throws {
+        // Shape of a midi-mapping.json written before velocity existed.
+        let json = """
+        {"enabled":true,"channel":3,"stickDeadzone":0.2,"triggerDeadzone":0.02,
+         "bindings":[{"control":{"button":{"_0":"a"}},"enabled":true,"kind":"note","number":61,"buttonMode":"toggle","invert":false}]}
+        """
+        let m = try JSONDecoder().decode(MIDIMapping.self, from: Data(json.utf8))
+        #expect(m.channel == 3)
+        let a = m.binding(for: .button(.a))!
+        #expect(a.number == 61 && a.kind == .note && a.buttonMode == .toggle)
+        #expect(a.velocitySource == .fixed && a.velocity == 127)
+        #expect(m.bindings.count == MIDIMapping.default.bindings.count, "missing controls are filled in")
     }
 }

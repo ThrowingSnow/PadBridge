@@ -58,7 +58,7 @@ struct MIDIView: View {
         return ScrollView {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
-                    Text("Control"); Text("Aktiv"); Text("Typ"); Text("Nr."); Text("Modus"); Text("Wert")
+                    Text("Control"); Text("Aktiv"); Text("Typ"); Text("Nr."); Text("Modus"); Text("Velocity"); Text("Wert")
                 }
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
@@ -122,6 +122,29 @@ private struct BindingRow: View {
                     Text("Toggle").tag(ButtonMode.toggle)
                 }
                 .labelsHidden().pickerStyle(.segmented).frame(width: 170)
+            }
+
+            if isAxis {
+                Text("–").foregroundStyle(.secondary).frame(width: 150, alignment: .leading)
+            } else {
+                HStack(spacing: 4) {
+                    Picker("", selection: $binding.velocitySource) {
+                        Text("Fest").tag(VelocitySource.fixed)
+                        Text("LT").tag(VelocitySource.leftTrigger)
+                        Text("RT").tag(VelocitySource.rightTrigger)
+                    }
+                    .labelsHidden().frame(width: 80)
+                    .help("Fest: eigener Wert. LT/RT: wie weit der Trigger beim Drücken gezogen ist.")
+                    if binding.velocitySource == .fixed {
+                        TextField("", value: $binding.velocity, format: .number)
+                            .frame(width: 44)
+                            .multilineTextAlignment(.trailing)
+                            .onChange(of: binding.velocity) { v in
+                                if v < 1 || v > 127 { binding.velocity = min(max(v, 1), 127) }
+                            }
+                    }
+                }
+                .frame(width: 150, alignment: .leading)
             }
 
             ValueBar(value: binding.enabled ? value : nil)
