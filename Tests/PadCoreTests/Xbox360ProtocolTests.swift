@@ -44,6 +44,8 @@ struct Xbox360ProtocolTests {
         #expect(Xbox360Protocol.ledReport(.player(1)) == [0x01, 0x03, 0x02])
         #expect(Xbox360Protocol.ledReport(.player(4)) == [0x01, 0x03, 0x05])
         #expect(Xbox360Protocol.ledReport(.off) == [0x01, 0x03, 0x00])
+        #expect(Xbox360Protocol.ledReport(.quadrant(1)) == [0x01, 0x03, 0x06])
+        #expect(Xbox360Protocol.ledReport(.quadrant(4)) == [0x01, 0x03, 0x09])
     }
 
     @Test func testChangesReportOnlyWhatMoved() {

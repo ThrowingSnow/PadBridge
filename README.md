@@ -3,7 +3,8 @@
 Gamepads on macOS without kernel extensions. Reads a wired Xbox 360 controller
 directly over USB (IOUSBHost, user space) and routes it to:
 
-- **MIDI**: a virtual CoreMIDI port, every control mapped to a CC/note *(planned)*
+- **MIDI**: virtual CoreMIDI port "PadBridge", every control mapped to a CC/note;
+  MIDI clock in drives the LED ring (beat blink, bar 1-4 -> LED 1-4)
 - **Network gamepad**: UDP to a small daemon on Linux that creates a real
   uinput Xbox 360 pad, e.g. for Wine/Proton games streamed with Sunshine/Moonlight *(planned)*
 - **Keyboard/mouse** emulation *(planned)*
@@ -25,6 +26,8 @@ GCController (later) ─┘      (+ rumble/LED back)                          �
 - `PadCore`: device-agnostic model (`PadButton`, `PadAxis`, `ControllerState`,
   `ControllerDevice`, `ControllerBackend`, `ControllerManager`). Nothing in here
   knows about USB or a specific pad.
+- `PadMIDI`: mapping (`MIDIMapper`, pure), clock following (`MIDIClockTracker`, pure),
+  CoreMIDI port (`MIDIEndpoint`), glue (`MIDIBridge`). Settings: `~/Library/Application Support/PadBridge/`.
 - `PadUSB`: raw USB backend. `Xbox360Protocol` is pure byte parsing (unit tested);
   `Xbox360Device` does the IOUSBHost I/O; `USBBackend` handles hotplug.
 - **Adding a controller family** means adding a backend (or a protocol + device
@@ -47,7 +50,9 @@ scripts/bundle.sh                  # build/PadBridge.app
 ## Roadmap
 
 1. ✅ Core model, USB backend (Xbox 360 wired + clones), live monitor
-2. MIDI output: per-control CC/note table, channel, 14-bit, relative mode, shift layer
+2. ✅ MIDI output: per-control CC/note table, channel, deadzones, momentary/toggle, invert;
+   MIDI clock in -> LED ring sync; random LED mode
+   - later: 14-bit, relative mode, shift layer, rumble from MIDI
 3. Network gamepad: UDP protocol + Rust uinput daemon for the Linux host
 4. Keyboard/mouse output
 5. Profiles (Guide + D-Pad to switch, shown on the LED ring)

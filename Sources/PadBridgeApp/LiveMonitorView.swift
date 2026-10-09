@@ -83,9 +83,24 @@ struct LiveMonitorView: View {
                         Button("Blinken") { model.setPlayerIndicator(.blinkAll) }
                         Button("Aus") { model.setPlayerIndicator(.off) }
                     }
+                    HStack {
+                        modeButton("Zufall", .random)
+                        modeButton("Clock-Sync", .clock)
+                        if model.ringMode == .clock { ClockBadge(clock: model.clock) }
+                    }
                 }
             }
         }
+    }
+
+    /// Toggles a ring animation; pressing it again returns to manual (P1).
+    private func modeButton(_ title: String, _ mode: RingDriver.Mode) -> some View {
+        let active = model.ringMode == mode
+        return Button(title) {
+            if active { model.setPlayerIndicator(.player(1)) } else { model.setRingMode(mode) }
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(active ? .accentColor : .secondary.opacity(0.35))
     }
 
     private func slider(_ title: String, _ value: Binding<Float>) -> some View {

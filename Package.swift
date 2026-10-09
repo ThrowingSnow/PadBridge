@@ -23,9 +23,16 @@ let package = Package(
             ]
         ),
 
-        .executableTarget(name: "padbridge-cli", dependencies: ["PadCore", "PadUSB"]),
-        .executableTarget(name: "PadBridgeApp", dependencies: ["PadCore", "PadUSB"]),
+        // Output: virtual CoreMIDI port, control mapping, clock following.
+        .target(
+            name: "PadMIDI",
+            dependencies: ["PadCore"],
+            linkerSettings: [.linkedFramework("CoreMIDI")]
+        ),
 
-        .testTarget(name: "PadCoreTests", dependencies: ["PadCore", "PadUSB"]),
+        .executableTarget(name: "padbridge-cli", dependencies: ["PadCore", "PadUSB"]),
+        .executableTarget(name: "PadBridgeApp", dependencies: ["PadCore", "PadUSB", "PadMIDI"]),
+
+        .testTarget(name: "PadCoreTests", dependencies: ["PadCore", "PadUSB", "PadMIDI"]),
     ]
 )

@@ -38,6 +38,8 @@ public enum PlayerIndicator: Equatable, Sendable {
     case off
     /// Player 1...4, briefly flashing then steady.
     case player(Int)
+    /// Quadrant 1...4 on immediately, no flash. For animations (clock sync, random).
+    case quadrant(Int)
     case blinkAll
     case rotate
 }

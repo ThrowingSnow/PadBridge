@@ -13,7 +13,12 @@ struct PadBridgeApp: App {
 
     var body: some Scene {
         WindowGroup("PadBridge") {
-            LiveMonitorView().environmentObject(model)
+            TabView {
+                LiveMonitorView().tabItem { Text("Monitor") }
+                MIDIView().tabItem { Text("MIDI") }
+            }
+            .environmentObject(model)
+            .frame(minWidth: 820, minHeight: 620)
         }
         MenuBarExtra {
             if model.devices.isEmpty {

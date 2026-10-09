@@ -67,6 +67,8 @@ public enum Xbox360Protocol {
         case .blinkAll: pattern = 0x01
         // 0x02...0x05: quadrant 1...4 flashes, then stays on.
         case .player(let n): pattern = UInt8(0x02 + (min(max(n, 1), 4) - 1))
+        // 0x06...0x09: quadrant 1...4 on, without the flash.
+        case .quadrant(let n): pattern = UInt8(0x06 + (min(max(n, 1), 4) - 1))
         case .rotate: pattern = 0x0A
         }
         return [0x01, 0x03, pattern]
