@@ -47,3 +47,23 @@ struct NetPadProtocolTests {
         #expect(NetPadKey.parse(String(repeating: "zz", count: 32)) == nil)
     }
 }
+
+struct NetPadMIDITests {
+    private let key = SymmetricKey(data: [UInt8](repeating: 7, count: 32))
+
+    @Test func midiPacketsRoundTrip() {
+        let messages: [[UInt8]] = [[0xB0, 20, 64], [0xF8], [0xF2, 0x00, 0x01], [0xC1, 5], [0x90, 60, 100], [0x80, 60, 0]]
+        var seq: UInt64 = 0
+        let packets = NetPadProtocol.midi(messages, nextSeq: { seq += 1; return seq }, key: key)
+        #expect(packets.count == 2, "5 messages per packet")
+        let decoded = packets.flatMap { NetPadProtocol.midiMessages(NetPadProtocol.decode($0, key: key)!.payload) }
+        #expect(decoded == messages)
+    }
+
+    /// Payload layout must match protocol.rs `midi_payload`.
+    @Test func midiPayloadLayout() {
+        let data = NetPadProtocol.midi([[0x90, 60, 127]], nextSeq: { 1 }, key: key)[0]
+        #expect(Array(data[16..<20]) == [1, 0x90, 60, 127])
+        #expect(data[4] == 4, "type MIDI")
+    }
+}

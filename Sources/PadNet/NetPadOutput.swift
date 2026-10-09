@@ -3,7 +3,8 @@ import Foundation
 import Network
 import PadCore
 
-/// Sends every connected controller to padbridge-netpad over UDP.
+/// Sends every connected controller to padbridge-netpad over UDP, and carries
+/// MIDI both ways when MIDI is routed to the network.
 ///
 /// - state packets go out immediately on every change,
 /// - the last state is repeated every 100 ms so a lost datagram heals quickly
@@ -12,6 +13,7 @@ import PadCore
 ///   daemon is answering at all.
 public final class NetPadOutput {
     public struct Settings: Codable, Equatable, Sendable {
+        /// Send the gamepad. The link also opens for MIDI alone (`setMIDILink`).
         public var enabled: Bool
         public var host: String
         public var port: UInt16
@@ -31,16 +33,25 @@ public final class NetPadOutput {
         public var daemonAnswering: Bool
         public var pads: [String: Int]   // device id -> pad index
         public var error: String?
+        public var midiLink: Bool
 
-        public static let off = Status(sending: false, latencyMs: nil, daemonAnswering: false, pads: [:], error: nil)
+        public static let off = Status(sending: false, latencyMs: nil, daemonAnswering: false, pads: [:], error: nil, midiLink: false)
     }
 
     /// Called on an internal queue whenever the status changes.
     public var onStatus: ((Status) -> Void)?
+    /// MIDI received from the Linux host (e.g. clock from the DAW), on an internal queue.
+    public var onMIDI: (([UInt8]) -> Void)?
 
     private let key: SymmetricKey
     private let queue = DispatchQueue(label: "padbridge.netpad", qos: .userInteractive)
     private var settings = Settings()
+    private var midiLink = false
+    private var ready = false
+    /// MIDI sent before the connection is ready (e.g. the initial value burst
+    /// on connect); flushed once it is. Gamepad state needs no buffer, it repeats.
+    private var pendingMIDI: [[UInt8]] = []
+    private var lastInboundSeq: UInt64 = 0
     private var connection: NWConnection?
     private var timer: DispatchSourceTimer?
     private var seq: UInt64
@@ -62,12 +73,50 @@ public final class NetPadOutput {
 
     public func apply(_ newSettings: Settings) {
         queue.async {
-            guard newSettings != self.settings || (newSettings.enabled && self.connection == nil) else { return }
-            self.stopOnQueue(sendBye: true)
+            let endpointChanged = newSettings.host != self.settings.host || newSettings.port != self.settings.port
+            let wasSendingPad = self.settings.enabled
             self.settings = newSettings
-            if newSettings.enabled { self.startOnQueue() }
-            self.publishStatus()
+            if wasSendingPad && !newSettings.enabled { self.sendByes() }
+            self.reconcile(restart: endpointChanged)
         }
+    }
+
+    /// Keeps the link open for MIDI even when the gamepad is not being sent.
+    public func setMIDILink(_ on: Bool) {
+        queue.async {
+            self.midiLink = on
+            self.reconcile(restart: false)
+        }
+    }
+
+    public func sendMIDI(_ messages: [[UInt8]]) {
+        queue.async {
+            guard self.connection != nil, !messages.isEmpty else { return }
+            guard self.ready else {
+                self.pendingMIDI = Array((self.pendingMIDI + messages).suffix(256))
+                return
+            }
+            self.transmitMIDI(messages)
+        }
+    }
+
+    private func transmitMIDI(_ messages: [[UInt8]]) {
+        for datagram in NetPadProtocol.midi(messages, nextSeq: nextSeq, key: key) {
+            // Twice: the daemon drops the duplicate, but a single loss no longer loses a note-off.
+            send(datagram)
+            send(datagram)
+        }
+    }
+
+    private func reconcile(restart: Bool) {
+        let wanted = settings.enabled || midiLink
+        if connection != nil, !wanted || restart { stopOnQueue(sendBye: settings.enabled) }
+        if connection == nil, wanted { startOnQueue() }
+        publishStatus()
+    }
+
+    private func sendByes() {
+        for pad in pads.values { send(NetPadProtocol.bye(pad: pad, seq: nextSeq(), key: key)) }
     }
 
     // MARK: Connection
@@ -84,9 +133,14 @@ public final class NetPadOutput {
             guard let self else { return }
             switch state {
             case .failed(let error), .waiting(let error):
+                self.ready = false
                 self.lastError = error.localizedDescription
             case .ready:
+                self.ready = true
                 self.lastError = nil
+                let pending = self.pendingMIDI
+                self.pendingMIDI.removeAll()
+                self.transmitMIDI(pending)
             default:
                 break
             }
@@ -102,17 +156,19 @@ public final class NetPadOutput {
         timer.resume()
         self.timer = timer
         // Push current states right away so the virtual pads appear.
-        for (pad, state) in lastStates { send(NetPadProtocol.state(pad: pad, seq: nextSeq(), state: state, key: key)) }
+        if settings.enabled {
+            for (pad, state) in lastStates { send(NetPadProtocol.state(pad: pad, seq: nextSeq(), state: state, key: key)) }
+        }
     }
 
     private func stopOnQueue(sendBye: Bool) {
-        if sendBye, connection != nil {
-            for pad in pads.values { send(NetPadProtocol.bye(pad: pad, seq: nextSeq(), key: key)) }
-        }
+        if sendBye, connection != nil { sendByes() }
         timer?.cancel()
         timer = nil
         connection?.cancel()
         connection = nil
+        ready = false
+        pendingMIDI.removeAll()
         lastPong = nil
         latencyMs = nil
         lastError = nil
@@ -121,19 +177,27 @@ public final class NetPadOutput {
     private func receive(on connection: NWConnection) {
         connection.receiveMessage { [weak self] data, _, _, error in
             guard let self, error == nil, self.connection === connection else { return }
-            if let data, let packet = NetPadProtocol.decode(data, key: self.key), packet.kind == .pong {
-                let sent = NetPadProtocol.timestamp(of: packet.payload)
-                let now = DispatchTime.now().uptimeNanoseconds
-                if now >= sent { self.latencyMs = Double(now - sent) / 1_000_000 }
-                self.lastPong = Date()
-                self.publishStatus()
+            if let data, let packet = NetPadProtocol.decode(data, key: self.key), packet.seq > self.lastInboundSeq {
+                self.lastInboundSeq = packet.seq
+                switch packet.kind {
+                case .pong:
+                    let sent = NetPadProtocol.timestamp(of: packet.payload)
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    if now >= sent { self.latencyMs = Double(now - sent) / 1_000_000 }
+                    self.lastPong = Date()
+                    self.publishStatus()
+                case .midiIn:
+                    for message in NetPadProtocol.midiMessages(packet.payload) { self.onMIDI?(message) }
+                default:
+                    break
+                }
             }
             self.receive(on: connection)
         }
     }
 
     private func tick() {
-        for (pad, state) in lastStates {
+        for (pad, state) in lastStates where settings.enabled {
             send(NetPadProtocol.state(pad: pad, seq: nextSeq(), state: state, key: key))
         }
         ticks += 1
@@ -147,8 +211,11 @@ public final class NetPadOutput {
         connection?.send(content: datagram, completion: .idempotent)
     }
 
+    /// Wall-clock microseconds, but always increasing. Tracking real time
+    /// means a restarted sender (or another tool using the same key) is never
+    /// locked out by the daemon's replay check for longer than its clock lag.
     private func nextSeq() -> UInt64 {
-        seq += 1
+        seq = max(seq + 1, UInt64(Date().timeIntervalSince1970 * 1_000_000))
         return seq
     }
 
@@ -170,6 +237,7 @@ public final class NetPadOutput {
             case .state(let info, let state):
                 guard let pad = self.pads[info.id] else { return }
                 self.lastStates[pad] = state
+                guard self.settings.enabled else { return }
                 self.send(NetPadProtocol.state(pad: pad, seq: self.nextSeq(), state: state, key: self.key))
             case .backendError:
                 break
@@ -180,7 +248,8 @@ public final class NetPadOutput {
     private func publishStatus() {
         let answering = lastPong.map { Date().timeIntervalSince($0) < 3 } ?? false
         let status = Status(sending: connection != nil, latencyMs: answering ? latencyMs : nil,
-                            daemonAnswering: answering, pads: pads.mapValues(Int.init), error: lastError)
+                            daemonAnswering: answering, pads: settings.enabled ? pads.mapValues(Int.init) : [:],
+                            error: lastError, midiLink: midiLink)
         guard status != lastStatus else { return }
         lastStatus = status
         onStatus?(status)

@@ -1,8 +1,10 @@
 import Foundation
 import PadCore
 
-/// Connects controllers to the virtual MIDI port: controller states go out as
-/// CC/notes, incoming clock is tracked and reported as ring cues.
+/// Connects controllers to MIDI: controller states go out as CC/notes, incoming
+/// clock is tracked and reported as ring cues. `MIDIMapping.target` picks the
+/// local virtual port or the network (Linux host); clock is only taken from
+/// the selected target so two DAWs cannot fight over the ring.
 ///
 /// Runs on the device and CoreMIDI threads, never on main; the UI reads results
 /// through the callbacks and must hop to main itself.
@@ -27,6 +29,8 @@ public final class MIDIBridge {
     public var onRingCue: ((RingCue) -> Void)?
     /// Clock status, throttled to roughly once per beat.
     public var onClockStatus: ((ClockStatus) -> Void)?
+    /// Sends raw MIDI messages to the network when the target is `.network`.
+    public var networkSend: (([[UInt8]]) -> Void)?
 
     private let endpoint: MIDIEndpoint
     private let lock = NSLock()
@@ -38,15 +42,31 @@ public final class MIDIBridge {
     public init(manager: ControllerManager, mapping: MIDIMapping, portName: String = "PadBridge") throws {
         self.mapping = mapping
         endpoint = try MIDIEndpoint(name: portName)
-        endpoint.onClock = { [weak self] message, time in self?.handleClock(message, at: time) }
+        endpoint.onClock = { [weak self] message, time in
+            guard let self, self.target == .local else { return }
+            self.handleClock(message, at: time)
+        }
         manager.addListener { [weak self] event in self?.handle(event) }
     }
 
     public func setMapping(_ mapping: MIDIMapping) {
         lock.withLock {
+            if mapping.target != self.mapping.target {
+                // New clock source: forget position and tempo of the old one.
+                clock = MIDIClockTracker()
+                lastStatus = nil
+            }
             self.mapping = mapping
             for id in mappers.keys { mappers[id]?.mapping = mapping }
         }
+    }
+
+    private var target: MIDITarget { lock.withLock { mapping.target } }
+
+    /// Raw MIDI received from the network (padbridge-netpad).
+    public func receiveNetworkMIDI(_ bytes: [UInt8]) {
+        guard target == .network, let message = ClockMessage(bytes: bytes) else { return }
+        handleClock(message, at: Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e9)
     }
 
     private func handle(_ event: ControllerManager.Event) {
@@ -56,14 +76,17 @@ public final class MIDIBridge {
         case .disconnected(let info):
             _ = lock.withLock { mappers.removeValue(forKey: info.id) }
         case .state(let info, let state):
-            let (messages, sent) = lock.withLock { () -> ([MIDIMessage], [Control: Int]) in
-                guard var mapper = mappers[info.id] else { return ([], [:]) }
+            let (messages, sent, target) = lock.withLock { () -> ([MIDIMessage], [Control: Int], MIDITarget) in
+                guard var mapper = mappers[info.id] else { return ([], [:], mapping.target) }
                 let messages = mapper.process(state)
                 mappers[info.id] = mapper
-                return (messages, mapper.lastSent)
+                return (messages, mapper.lastSent, mapping.target)
             }
             guard !messages.isEmpty else { return }
-            endpoint.send(messages)
+            switch target {
+            case .local: endpoint.send(messages)
+            case .network: networkSend?(messages.map { [$0.status, $0.data1, $0.data2] })
+            }
             onSent?(info.id, sent)
         case .backendError:
             break

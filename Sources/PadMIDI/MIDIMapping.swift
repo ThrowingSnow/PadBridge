@@ -64,8 +64,17 @@ public struct MIDIBinding: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// Where controller MIDI goes and where clock is taken from.
+public enum MIDITarget: String, Codable, CaseIterable, Sendable {
+    /// Virtual CoreMIDI port "PadBridge" on this Mac.
+    case local
+    /// ALSA port "PadBridge" on the Linux host, via padbridge-netpad.
+    case network
+}
+
 public struct MIDIMapping: Codable, Equatable, Sendable {
     public var enabled: Bool
+    public var target: MIDITarget
     /// 1...16
     public var channel: Int
     /// Fraction of travel ignored around the centre of each stick axis (drift).
@@ -78,6 +87,7 @@ public struct MIDIMapping: Codable, Equatable, Sendable {
     /// axes on 20...25, buttons on 102...116.
     public static let `default` = MIDIMapping(
         enabled: true,
+        target: .local,
         channel: 1,
         stickDeadzone: 0.12,
         triggerDeadzone: 0.02,
@@ -239,6 +249,7 @@ extension MIDIMapping {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = MIDIMapping.default
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+        target = try c.decodeIfPresent(MIDITarget.self, forKey: .target) ?? d.target
         channel = try c.decodeIfPresent(Int.self, forKey: .channel) ?? d.channel
         stickDeadzone = try c.decodeIfPresent(Float.self, forKey: .stickDeadzone) ?? d.stickDeadzone
         triggerDeadzone = try c.decodeIfPresent(Float.self, forKey: .triggerDeadzone) ?? d.triggerDeadzone

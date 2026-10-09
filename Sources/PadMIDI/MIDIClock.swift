@@ -8,6 +8,20 @@ public enum ClockMessage: Equatable, Sendable {
     case songPosition(Int)
 }
 
+extension ClockMessage {
+    /// Raw MIDI bytes -> clock message, nil for anything else.
+    public init?(bytes: [UInt8]) {
+        switch bytes.first {
+        case 0xF8: self = .tick
+        case 0xFA: self = .start
+        case 0xFB: self = .continue
+        case 0xFC: self = .stop
+        case 0xF2 where bytes.count >= 3: self = .songPosition(Int(bytes[2] & 0x7F) << 7 | Int(bytes[1] & 0x7F))
+        default: return nil
+        }
+    }
+}
+
 /// What the LED ring should do in response to the clock.
 public enum RingCue: Equatable, Sendable {
     /// Start of a quarter note. Both 0-based: `beat` within the bar (0...3),

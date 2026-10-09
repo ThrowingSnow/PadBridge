@@ -5,7 +5,9 @@ edition = "2021"
 description = "Receives PadBridge gamepad packets over UDP and exposes them as a uinput Xbox 360 pad"
 
 [dependencies]
+alsa = "0.9"
 evdev = "0.12"
+libc = "0.2"
 hmac = "0.12"
 sha2 = "0.10"
 

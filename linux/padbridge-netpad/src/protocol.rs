@@ -6,7 +6,8 @@
 //! | off | size | field                                                     |
 //! |-----|------|-----------------------------------------------------------|
 //! | 0   | 4    | magic "PBG1"                                              |
-//! | 4   | 1    | type: 1 state, 2 ping, 3 bye, 0x81 pong (daemon -> Mac)   |
+//! | 4   | 1    | type: 1 state, 2 ping, 3 bye, 4 MIDI (Mac -> daemon),     |
+//! |     |      |       0x81 pong, 0x84 MIDI (daemon -> Mac)                |
 //! | 5   | 1    | pad index 0..=3                                           |
 //! | 6   | 2    | reserved (0)                                              |
 //! | 8   | 8    | sequence, strictly increasing per sender                  |
@@ -17,6 +18,9 @@
 //! | 28  | 4    | reserved (0)                                              |
 //!
 //! Ping/pong reuse bytes 16..24 for the sender's timestamp, echoed unchanged.
+//! MIDI packets: byte 16 = message count (1..=5), then five 3-byte slots, each
+//! one MIDI message padded with zeros (length follows from the status byte).
+//! MIDI packets are sent twice; the sequence check drops the duplicate.
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -29,7 +33,42 @@ pub const PACKET_LEN: usize = BODY_LEN + MAC_LEN;
 pub const TYPE_STATE: u8 = 1;
 pub const TYPE_PING: u8 = 2;
 pub const TYPE_BYE: u8 = 3;
+pub const TYPE_MIDI: u8 = 4;
 pub const TYPE_PONG: u8 = 0x81;
+pub const TYPE_MIDI_IN: u8 = 0x84;
+
+pub const MIDI_PER_PACKET: usize = 5;
+
+/// Bytes in a MIDI message with this status byte (channel and system messages).
+pub fn midi_len(status: u8) -> usize {
+    match status {
+        0xF8..=0xFF | 0xF6 => 1,
+        0xC0..=0xDF | 0xF1 | 0xF3 => 2,
+        _ => 3,
+    }
+}
+
+/// MIDI messages carried in a TYPE_MIDI / TYPE_MIDI_IN payload.
+pub fn midi_messages(payload: &[u8; 16]) -> Vec<Vec<u8>> {
+    let count = (payload[0] as usize).min(MIDI_PER_PACKET);
+    (0..count)
+        .map(|i| &payload[1 + i * 3..4 + i * 3])
+        .filter(|slot| slot[0] & 0x80 != 0)
+        .map(|slot| slot[..midi_len(slot[0])].to_vec())
+        .collect()
+}
+
+/// Packs up to five messages into one payload.
+pub fn midi_payload(messages: &[Vec<u8>]) -> [u8; 16] {
+    let mut payload = [0u8; 16];
+    let messages = &messages[..messages.len().min(MIDI_PER_PACKET)];
+    payload[0] = messages.len() as u8;
+    for (i, m) in messages.iter().enumerate() {
+        let n = m.len().min(3);
+        payload[1 + i * 3..1 + i * 3 + n].copy_from_slice(&m[..n]);
+    }
+    payload
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PadState {
@@ -141,6 +180,13 @@ mod tests {
         assert!(decode(&[8u8; 32], &bytes).is_none());
         bytes[18] ^= 1;
         assert!(decode(&TEST_KEY, &bytes).is_none());
+    }
+
+    #[test]
+    fn midi_payload_roundtrip() {
+        let msgs = vec![vec![0xB0, 20, 64], vec![0xF8], vec![0xF2, 0x00, 0x01], vec![0xC1, 5]];
+        assert_eq!(midi_messages(&midi_payload(&msgs)), msgs);
+        assert_eq!(midi_payload(&[vec![0x90, 60, 127]])[..4], [1, 0x90, 60, 127]);
     }
 
     #[test]

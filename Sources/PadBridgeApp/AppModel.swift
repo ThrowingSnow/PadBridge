@@ -69,6 +69,11 @@ final class AppModel: ObservableObject {
                 Task { @MainActor in self?.netStatus = status }
             }
             output.apply(netSettings)
+            output.setMIDILink(midiMapping.enabled && midiMapping.target == .network)
+            if let midi {
+                midi.networkSend = { [weak output] messages in output?.sendMIDI(messages) }
+                output.onMIDI = { [weak midi] bytes in midi?.receiveNetworkMIDI(bytes) }
+            }
             net = output
             netKeyHex = NetPadKey.hexString()
         } catch {
@@ -141,6 +146,7 @@ final class AppModel: ObservableObject {
 
     private func midiMappingChanged() {
         midi?.setMapping(midiMapping)
+        net?.setMIDILink(midiMapping.enabled && midiMapping.target == .network)
         // Debounced: typing a CC number should not write the file per keystroke.
         saveWork?.cancel()
         let mapping = midiMapping

@@ -55,6 +55,9 @@ public final class ControllerManager: ControllerBackendDelegate {
         let info = device.info
         device.onState = { [weak self] state in self?.emit(.state(info, state)) }
         emit(.connected(info))
+        // Pads like the Xbox 360 only report on change, so an untouched pad would
+        // stay silent: publish the current state once so outputs start right away.
+        emit(.state(info, device.state))
     }
 
     public func backend(_ backend: ControllerBackend, didDisconnect device: ControllerDevice) {

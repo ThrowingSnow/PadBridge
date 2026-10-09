@@ -21,10 +21,13 @@ struct MIDIView: View {
                 Toggle("MIDI senden", isOn: $model.midiMapping.enabled)
                     .toggleStyle(.switch)
                     .disabled(!model.midiAvailable)
-                Text(model.midiAvailable
-                     ? "Virtueller Port „PadBridge“ – in der DAW als MIDI-Eingang wählen."
-                     : "CoreMIDI-Port konnte nicht erstellt werden (siehe Log).")
-                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Ziel", selection: $model.midiMapping.target) {
+                    Text("Mac").tag(MIDITarget.local)
+                    Text("Tower (Netzwerk)").tag(MIDITarget.network)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+                targetHint
                 Picker("Kanal", selection: $model.midiMapping.channel) {
                     ForEach(1...16, id: \.self) { Text("\($0)").tag($0) }
                 }
@@ -38,9 +41,30 @@ struct MIDIView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Clock-Eingang").font(.headline)
                 ClockBadge(clock: model.clock)
-                Text("In der DAW MIDI-Clock an „PadBridge“ senden.\nLED-Ring: Monitor → „Clock: Takt“ oder „Clock: Beat“.")
+                Text("In der DAW MIDI-Clock an „PadBridge“ senden\n(\(model.midiMapping.target == .local ? "auf diesem Mac" : "auf dem Tower")).\n"
+                     + "LED-Ring: Monitor → „Clock: Takt“ oder „Clock: Beat“.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var targetHint: some View {
+        switch model.midiMapping.target {
+        case .local:
+            Text(model.midiAvailable
+                 ? "Virtueller Port „PadBridge“ – in der DAW als MIDI-Eingang wählen."
+                 : "CoreMIDI-Port konnte nicht erstellt werden (siehe Log).")
+                .font(.caption).foregroundStyle(.secondary)
+        case .network:
+            let s = model.netStatus
+            HStack(spacing: 6) {
+                Circle().fill(s.daemonAnswering ? Color.green : Color.orange).frame(width: 8, height: 8)
+                Text(s.daemonAnswering
+                     ? "ALSA-Port „PadBridge“ auf \(model.netSettings.host)"
+                     : "Keine Antwort von \(model.netSettings.host) – Host im Netzwerk-Tab prüfen")
+            }
+            .font(.caption).foregroundStyle(.secondary)
         }
     }
 

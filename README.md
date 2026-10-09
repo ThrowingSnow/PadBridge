@@ -56,6 +56,8 @@ scripts/bundle.sh                  # build/PadBridge.app
    MIDI clock in -> LED ring sync; random LED mode
    - later: 14-bit, relative mode, shift layer, rumble from MIDI
 3. ✅ Network gamepad: HMAC-signed UDP protocol + Rust uinput daemon, latency display
+   - MIDI over the same link: ALSA port "PadBridge" on the Linux host, clock back to the ring;
+     MIDI tab switches the target between Mac and Linux host
    - next: rumble from the game back to the pad
 4. Keyboard/mouse output
 5. Profiles (Guide + D-Pad to switch, shown on the LED ring)

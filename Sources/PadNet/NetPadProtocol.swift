@@ -9,13 +9,16 @@ import PadCore
 /// Little-endian. Body: "PBG1", type, pad, 2 reserved, u64 seq, 16 payload bytes.
 /// State payload: u16 buttons (Xbox 360 report layout), LT, RT, LX, LY, RX, RY
 /// (i16, up/right positive), 4 reserved. Ping/pong: u64 timestamp, echoed.
+/// MIDI (both directions): count byte + five 3-byte slots; sent twice, the
+/// receiver's sequence check drops the duplicate.
 public enum NetPadProtocol {
     public static let packetLength = 48
     static let bodyLength = 32
     static let magic: [UInt8] = Array("PBG1".utf8)
 
     public enum Kind: UInt8 {
-        case state = 1, ping = 2, bye = 3, pong = 0x81
+        case state = 1, ping = 2, bye = 3, midi = 4
+        case pong = 0x81, midiIn = 0x84
     }
 
     public struct Packet: Equatable {
@@ -45,6 +48,38 @@ public enum NetPadProtocol {
 
     public static func bye(pad: UInt8, seq: UInt64, key: SymmetricKey) -> Data {
         encode(Packet(kind: .bye, pad: pad, seq: seq, payload: []), key: key)
+    }
+
+    static let midiPerPacket = 5
+
+    /// Raw MIDI messages -> as many MIDI packets as needed (5 messages each).
+    /// `nextSeq` is called once per packet.
+    public static func midi(_ messages: [[UInt8]], nextSeq: () -> UInt64, key: SymmetricKey) -> [Data] {
+        stride(from: 0, to: messages.count, by: midiPerPacket).map { start in
+            let chunk = messages[start..<min(start + midiPerPacket, messages.count)]
+            var payload = [UInt8(chunk.count)]
+            for message in chunk { payload += Array(message.prefix(3)) + [UInt8](repeating: 0, count: 3 - min(message.count, 3)) }
+            return encode(Packet(kind: .midi, pad: 0, seq: nextSeq(), payload: payload), key: key)
+        }
+    }
+
+    /// MIDI messages carried in a `.midi` / `.midiIn` payload.
+    public static func midiMessages(_ payload: [UInt8]) -> [[UInt8]] {
+        guard let count = payload.first else { return [] }
+        return (0..<min(Int(count), midiPerPacket)).compactMap { i in
+            let slot = Array(payload.dropFirst(1 + i * 3).prefix(3))
+            guard let status = slot.first, status & 0x80 != 0 else { return nil }
+            return Array(slot.prefix(midiLength(status)))
+        }
+    }
+
+    /// Bytes in a MIDI message with this status byte (same rule as protocol.rs).
+    static func midiLength(_ status: UInt8) -> Int {
+        switch status {
+        case 0xF8...0xFF, 0xF6: return 1
+        case 0xC0...0xDF, 0xF1, 0xF3: return 2
+        default: return 3
+        }
     }
 
     /// Canonical state -> 360 wire values.

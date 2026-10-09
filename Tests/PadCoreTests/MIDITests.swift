@@ -166,3 +166,14 @@ struct MIDIVelocityTests {
         #expect(m.bindings.count == MIDIMapping.default.bindings.count, "missing controls are filled in")
     }
 }
+
+struct ClockBytesTests {
+    @Test func rawBytesDecode() {
+        #expect(ClockMessage(bytes: [0xF8]) == .tick)
+        #expect(ClockMessage(bytes: [0xFA]) == .start)
+        #expect(ClockMessage(bytes: [0xFB]) == .continue)
+        #expect(ClockMessage(bytes: [0xFC]) == .stop)
+        #expect(ClockMessage(bytes: [0xF2, 0x00, 0x01]) == .songPosition(128))
+        #expect(ClockMessage(bytes: [0xB0, 20, 64]) == nil)
+    }
+}

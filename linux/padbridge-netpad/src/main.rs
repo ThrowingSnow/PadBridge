@@ -1,19 +1,66 @@
 //! padbridge-netpad: UDP -> uinput bridge for PadBridge (see protocol.rs).
 
+mod midi;
 mod pad;
 mod protocol;
 
 use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use midi::MidiPort;
 use pad::VirtualPad;
-use protocol::{Packet, PACKET_LEN, TYPE_BYE, TYPE_PING, TYPE_PONG, TYPE_STATE};
+use protocol::{Packet, PACKET_LEN, TYPE_BYE, TYPE_MIDI, TYPE_MIDI_IN, TYPE_PING, TYPE_PONG, TYPE_STATE};
 
 /// No packet for this long: release everything so nothing keeps "running".
 const SILENCE_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_PADS: u8 = 4;
+/// MIDI from ALSA is only forwarded to a Mac heard from this recently.
+const PEER_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Everything both the UDP loop and the ALSA thread need to send to the Mac.
+struct Outbox {
+    socket: UdpSocket,
+    key: Vec<u8>,
+    /// Last sequence sent; see `next_seq`.
+    seq: AtomicU64,
+    peer: Mutex<Option<(SocketAddr, Instant)>>,
+}
+
+impl Outbox {
+    /// Wall-clock microseconds, but always increasing (same rule as the Mac).
+    fn next_seq(&self) -> u64 {
+        let now = now_micros();
+        let mut current = self.seq.load(Ordering::Relaxed);
+        loop {
+            let next = (current + 1).max(now);
+            match self.seq.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return next,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    fn send(&self, kind: u8, pad: u8, payload: [u8; 16], to: SocketAddr) {
+        let packet = Packet { kind, pad, seq: self.next_seq(), payload };
+        let _ = self.socket.send_to(&protocol::encode(&self.key, &packet), to);
+    }
+
+    /// Sends a MIDI message from ALSA to the Mac (twice, see protocol.rs).
+    fn send_midi(&self, message: Vec<u8>) {
+        let Some((peer, seen)) = *self.peer.lock().unwrap() else { return };
+        if seen.elapsed() > PEER_TIMEOUT {
+            return;
+        }
+        let payload = protocol::midi_payload(&[message]);
+        for _ in 0..2 {
+            self.send(TYPE_MIDI_IN, 0, payload, peer);
+        }
+    }
+}
 
 struct Args {
     bind: String,
@@ -68,10 +115,29 @@ fn main() {
     socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
     eprintln!("padbridge-netpad listening on {}:{}", args.bind, args.port);
 
+    let outbox = Arc::new(Outbox {
+        socket: socket.try_clone().unwrap_or_else(|e| fail(&format!("socket: {e}"))),
+        key: key.clone(),
+        seq: AtomicU64::new(0),
+        peer: Mutex::new(None),
+    });
+    let midi = {
+        let outbox = outbox.clone();
+        match MidiPort::start(move |message| outbox.send_midi(message)) {
+            Ok(port) => {
+                eprintln!("ALSA MIDI port \"PadBridge\" ready");
+                Some(port)
+            }
+            Err(e) => {
+                eprintln!("MIDI disabled: {e}");
+                None
+            }
+        }
+    };
+
     let mut slots: HashMap<u8, Slot> = HashMap::new();
     // Highest sequence seen; anything not above it is a replay or a reordered stale packet.
     let mut last_seq = 0u64;
-    let mut own_seq = 0u64;
     let mut peer: Option<SocketAddr> = None;
     let mut buf = [0u8; 512];
 
@@ -85,7 +151,8 @@ fn main() {
                             eprintln!("sender {from}");
                             peer = Some(from);
                         }
-                        handle(&socket, &key, from, packet, &mut slots, &mut own_seq);
+                        *outbox.peer.lock().unwrap() = Some((from, Instant::now()));
+                        handle(&outbox, midi.as_ref(), from, packet, &mut slots);
                     }
                 }
             }
@@ -100,7 +167,7 @@ fn main() {
     }
 }
 
-fn handle(socket: &UdpSocket, key: &[u8], from: SocketAddr, packet: Packet, slots: &mut HashMap<u8, Slot>, own_seq: &mut u64) {
+fn handle(outbox: &Outbox, midi: Option<&MidiPort>, from: SocketAddr, packet: Packet, slots: &mut HashMap<u8, Slot>) {
     match packet.kind {
         TYPE_STATE => {
             let slot = match slots.entry(packet.pad) {
@@ -123,10 +190,13 @@ fn handle(socket: &UdpSocket, key: &[u8], from: SocketAddr, packet: Packet, slot
                 eprintln!("pad {}: write failed: {err}", packet.pad);
             }
         }
-        TYPE_PING => {
-            *own_seq += 1;
-            let pong = Packet { kind: TYPE_PONG, pad: packet.pad, seq: *own_seq, payload: packet.payload };
-            let _ = socket.send_to(&protocol::encode(key, &pong), from);
+        TYPE_PING => outbox.send(TYPE_PONG, packet.pad, packet.payload, from),
+        TYPE_MIDI => {
+            if let Some(midi) = midi {
+                for message in protocol::midi_messages(&packet.payload) {
+                    midi.send(message);
+                }
+            }
         }
         TYPE_BYE => {
             if let Some(slot) = slots.get_mut(&packet.pad) {
@@ -136,6 +206,10 @@ fn handle(socket: &UdpSocket, key: &[u8], from: SocketAddr, packet: Packet, slot
         }
         _ => {}
     }
+}
+
+fn now_micros() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros() as u64).unwrap_or(0)
 }
 
 fn fail(message: &str) -> ! {
