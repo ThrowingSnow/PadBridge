@@ -23,7 +23,7 @@ struct MIDIView: View {
                     .disabled(!model.midiAvailable)
                 Picker("Ziel", selection: $model.midiMapping.target) {
                     Text("Mac").tag(MIDITarget.local)
-                    Text("Tower (Netzwerk)").tag(MIDITarget.network)
+                    Text("Linux-Host (Netzwerk)").tag(MIDITarget.network)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 260)
@@ -41,7 +41,7 @@ struct MIDIView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Clock-Eingang").font(.headline)
                 ClockBadge(clock: model.clock)
-                Text("In der DAW MIDI-Clock an „PadBridge“ senden\n(\(model.midiMapping.target == .local ? "auf diesem Mac" : "auf dem Tower")).\n"
+                Text("In der DAW MIDI-Clock an „PadBridge“ senden\n(\(model.midiMapping.target == .local ? "auf diesem Mac" : "auf dem Linux-Host")).\n"
                      + "LED-Ring: Monitor → „Clock: Takt“ oder „Clock: Beat“.")
                     .font(.caption).foregroundStyle(.secondary)
             }

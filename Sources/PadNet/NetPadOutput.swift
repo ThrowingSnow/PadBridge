@@ -12,6 +12,18 @@ import PadCore
 /// - a ping every second measures round-trip time and shows whether the
 ///   daemon is answering at all.
 public final class NetPadOutput {
+    /// A named host the user saved for quick switching (e.g. "Desktop LAN").
+    public struct HostPreset: Codable, Hashable, Sendable, Identifiable {
+        public var name: String
+        public var host: String
+        public var id: String { name + "\u{0}" + host }
+
+        public init(name: String, host: String) {
+            self.name = name
+            self.host = host
+        }
+    }
+
     public struct Settings: Codable, Equatable, Sendable {
         /// Send the gamepad. The link also opens for MIDI alone (`setMIDILink`).
         public var enabled: Bool
@@ -19,12 +31,16 @@ public final class NetPadOutput {
         public var port: UInt16
         /// Let games on the host drive the pad's motors.
         public var rumble: Bool
+        /// User-defined hosts shown as buttons next to the host field.
+        public var presets: [HostPreset]
 
-        public init(enabled: Bool = false, host: String = "192.0.2.10", port: UInt16 = 48100, rumble: Bool = true) {
+        public init(enabled: Bool = false, host: String = "", port: UInt16 = 48100, rumble: Bool = true,
+                    presets: [HostPreset] = []) {
             self.enabled = enabled
             self.host = host
             self.port = port
             self.rumble = rumble
+            self.presets = presets
         }
 
         // Missing fields (older settings files) take their defaults.
@@ -35,6 +51,7 @@ public final class NetPadOutput {
             host = try c.decodeIfPresent(String.self, forKey: .host) ?? d.host
             port = try c.decodeIfPresent(UInt16.self, forKey: .port) ?? d.port
             rumble = try c.decodeIfPresent(Bool.self, forKey: .rumble) ?? d.rumble
+            presets = try c.decodeIfPresent([HostPreset].self, forKey: .presets) ?? d.presets
         }
     }
 

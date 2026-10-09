@@ -70,9 +70,15 @@ struct NetPadMIDITests {
 
 struct NetPadSettingsTests {
     @Test func oldSettingsFileKeepsValuesAndEnablesRumble() throws {
-        let json = #"{"enabled":true,"host":"192.0.2.20","port":48100}"#
+        let json = #"{"enabled":true,"host":"192.0.2.10","port":48100}"#
         let s = try JSONDecoder().decode(NetPadOutput.Settings.self, from: Data(json.utf8))
-        #expect(s.enabled && s.host == "192.0.2.20" && s.rumble)
+        #expect(s.enabled && s.host == "192.0.2.10" && s.rumble && s.presets.isEmpty)
+    }
+
+    @Test func presetsRoundTrip() throws {
+        let s = NetPadOutput.Settings(host: "192.0.2.10", presets: [.init(name: "Desktop", host: "192.0.2.10")])
+        let back = try JSONDecoder().decode(NetPadOutput.Settings.self, from: JSONEncoder().encode(s))
+        #expect(back == s)
     }
 
     @Test func rumblePacketDecodes() {

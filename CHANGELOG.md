@@ -4,6 +4,17 @@ Versions follow [Semantic Versioning](https://semver.org). The Mac app and
 `linux/padbridge-netpad` share one version number; the network protocol is
 versioned separately by its magic (`PBG1` = protocol v1).
 
+## [0.3.0] - 2026-10-10
+
+### Added
+- Host presets in the Network tab: save the current host under a name ("+"),
+  click to switch, right-click to delete. Stored in `netpad.json`.
+- `DOC.md`: step-by-step setup for a new Mac and Linux host.
+
+### Changed
+- No built-in hosts any more; the host field starts empty.
+- Network target is called "Linux-Host" in the UI.
+
 ## [0.2.0] - 2026-10-10
 
 ### Added

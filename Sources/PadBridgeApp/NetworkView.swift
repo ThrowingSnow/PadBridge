@@ -5,12 +5,8 @@ import PadNet
 /// Network gamepad: send the pad to padbridge-netpad on a Linux host.
 struct NetworkView: View {
     @EnvironmentObject var model: AppModel
-    @State private var portText = ""
-
-    private static let presets: [(String, String)] = [
-        ("Tower LAN", "192.0.2.10"),
-        ("Tower Tailscale", "192.0.2.20"),
-    ]
+    @State private var showSavePreset = false
+    @State private var presetName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -24,9 +20,7 @@ struct NetworkView: View {
                     HStack {
                         TextField("IP oder Hostname", text: $model.netSettings.host)
                             .frame(width: 200)
-                        ForEach(Self.presets, id: \.1) { preset in
-                            Button(preset.0) { model.netSettings.host = preset.1 }
-                        }
+                        presetButtons
                     }
                 }
                 GridRow {
@@ -52,6 +46,60 @@ struct NetworkView: View {
         .padding(20)
     }
 
+    /// Saved hosts: click to use, right-click to delete, "+" saves the current host.
+    private var presetButtons: some View {
+        HStack {
+            ForEach(model.netSettings.presets) { preset in
+                Button(preset.name) { model.netSettings.host = preset.host }
+                    .help(preset.host)
+                    .tint(preset.host == model.netSettings.host ? .accentColor : nil)
+                    .buttonStyle(.bordered)
+                    .contextMenu {
+                        Button("Preset „\(preset.name)“ löschen", role: .destructive) {
+                            model.netSettings.presets.removeAll { $0 == preset }
+                        }
+                    }
+            }
+            Button {
+                presetName = ""
+                showSavePreset = true
+            } label: {
+                Image(systemName: "plus")
+            }
+            .help("Aktuellen Host als Preset speichern (Rechtsklick auf ein Preset löscht es)")
+            .disabled(model.netSettings.host.trimmingCharacters(in: .whitespaces).isEmpty)
+            .popover(isPresented: $showSavePreset, arrowEdge: .bottom) { savePresetForm }
+        }
+    }
+
+    private var savePresetForm: some View {
+        let name = presetName.trimmingCharacters(in: .whitespaces)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Preset für \(model.netSettings.host)").font(.headline)
+            TextField("Name, z.B. Desktop LAN", text: $presetName)
+                .frame(width: 220)
+                .onSubmit(savePreset)
+            HStack {
+                Spacer()
+                Button("Abbrechen") { showSavePreset = false }
+                Button("Speichern", action: savePreset)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.isEmpty)
+            }
+        }
+        .padding(14)
+    }
+
+    private func savePreset() {
+        let name = presetName.trimmingCharacters(in: .whitespaces)
+        let host = model.netSettings.host.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, !host.isEmpty else { return }
+        // Same name again = update that preset's host.
+        model.netSettings.presets.removeAll { $0.name == name }
+        model.netSettings.presets.append(.init(name: name, host: host))
+        showSavePreset = false
+    }
+
     private var status: some View {
         let s = model.netStatus
         return VStack(alignment: .leading, spacing: 6) {
@@ -65,7 +113,7 @@ struct NetworkView: View {
             }
             if let error = s.error { Text(error).font(.caption).foregroundStyle(.orange) }
             if s.midiLink {
-                Text("MIDI läuft über diese Verbindung (MIDI-Tab → Ziel: Tower).").font(.caption).foregroundStyle(.secondary)
+                Text("MIDI läuft über diese Verbindung (MIDI-Tab → Ziel: Linux-Host).").font(.caption).foregroundStyle(.secondary)
             }
             if s.inputLink {
                 Text("Tastatur/Maus läuft über diese Verbindung.").font(.caption).foregroundStyle(.secondary)

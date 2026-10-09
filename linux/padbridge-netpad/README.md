@@ -5,11 +5,14 @@ Linux side of PadBridge's network gamepad: receives signed UDP packets
 like an xpad-driven Xbox 360 pad (`045e:028e`), so Wine/Proton, Steam and SDL
 treat it as a real controller.
 
+Step-by-step setup (German): [../../DOC.md](../../DOC.md)
+
 ## Install (as the desktop user, no root)
 
 ```sh
 cargo build --release
-install -m 755 target/release/padbridge-netpad ~/.local/bin/
+install -Dm755 target/release/padbridge-netpad ~/.local/bin/padbridge-netpad
+mkdir -p ~/.config/padbridge
 install -m 600 /dev/stdin ~/.config/padbridge/netpad.key   # paste the key from PadBridge → Netzwerk → "Schlüssel kopieren"
 cp padbridge-netpad.service ~/.config/systemd/user/
 systemctl --user enable --now padbridge-netpad

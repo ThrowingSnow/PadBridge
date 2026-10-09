@@ -7,7 +7,10 @@ directly over USB (IOUSBHost, user space) and routes it to:
   MIDI clock in drives the LED ring (beat blink, bar 1-4 -> LED 1-4)
 - **Network gamepad**: signed UDP to `linux/padbridge-netpad`, which creates a real
   uinput Xbox 360 pad on Linux, e.g. for Wine/Proton games streamed with Sunshine/Moonlight
-- **Keyboard/mouse** emulation *(planned)*
+- **Keyboard/mouse** emulation on the Mac (CGEvent) or on the Linux host (uinput)
+- **Rumble** from games on the Linux host back to the pad
+
+**Setup on a new machine: see [DOC.md](DOC.md)** (step by step, German).
 
 Why: the old 360Controller kext is blocked on macOS 14 (IOHIDFamily kexts are
 classified "Unsupported"), and Moonlight cannot see the pad because it is not a
@@ -16,7 +19,7 @@ HID device.
 ## Architecture
 
 ```
-Backends (input)            Canonical state          Mapping (planned)    Outputs (planned)
+Backends (input)            Canonical state          Mapping              Outputs
 USBBackend  ─┐                                                            ┌─► MIDI
   Xbox360Device              PadButton + PadAxis      profiles, layers,    ├─► Keyboard/Mouse
 HID (later) ─┼──► ControllerManager ──► events ──►     curves, deadzones ─┼─► Net gamepad (UDP)
@@ -58,7 +61,8 @@ scripts/bundle.sh                  # build/PadBridge.app
 3. ✅ Network gamepad: HMAC-signed UDP protocol + Rust uinput daemon, latency display
    - MIDI over the same link: ALSA port "PadBridge" on the Linux host, clock back to the ring;
      MIDI tab switches the target between Mac and Linux host
-   - next: rumble from the game back to the pad
-4. Keyboard/mouse output
+   - ✅ rumble from the game back to the pad, Bitwig on Linux via snd-virmidi
+   - ✅ host presets (name + address) editable in the app
+4. ✅ Keyboard/mouse output (Mac or Linux host, alongside the gamepad)
 5. Profiles (Guide + D-Pad to switch, shown on the LED ring)
 6. More backends: IOHID, GameController.framework

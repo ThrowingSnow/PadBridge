@@ -24,7 +24,7 @@ struct KeyMouseView: View {
                 .toggleStyle(.switch)
             Picker("Ziel", selection: $model.keyMouse.target) {
                 Text("Mac").tag(EmulationTarget.local)
-                Text("Tower (Netzwerk)").tag(EmulationTarget.network)
+                Text("Linux-Host (Netzwerk)").tag(EmulationTarget.network)
             }
             .pickerStyle(.segmented)
             .frame(width: 260)
