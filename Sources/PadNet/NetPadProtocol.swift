@@ -11,6 +11,8 @@ import PadCore
 /// (i16, up/right positive), 4 reserved. Ping/pong: u64 timestamp, echoed.
 /// MIDI (both directions): count byte + five 3-byte slots; sent twice, the
 /// receiver's sequence check drops the duplicate.
+/// Rumble (daemon -> Mac): heavy motor, light motor (0...255), repeated every
+/// 200 ms while non-zero.
 public enum NetPadProtocol {
     public static let packetLength = 48
     static let bodyLength = 32
@@ -18,7 +20,7 @@ public enum NetPadProtocol {
 
     public enum Kind: UInt8 {
         case state = 1, ping = 2, bye = 3, midi = 4
-        case pong = 0x81, midiIn = 0x84
+        case pong = 0x81, rumble = 0x82, midiIn = 0x84
     }
 
     public struct Packet: Equatable {

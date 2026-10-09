@@ -6,6 +6,16 @@ versioned separately by its magic (`PBG1` = protocol v1).
 
 ## [Unreleased]
 
+### Added
+- Rumble from games on the Linux host: the virtual pad accepts FF_RUMBLE effects
+  (upload/erase/play/stop/gain), the daemon forwards motor levels (packet 0x82),
+  the Mac drives the pad's motors; 500 ms safety stop if updates stop.
+  Toggle in the Network tab.
+
+### Changed
+- padbridge-netpad waits on the socket and all virtual pads with `poll()`
+  instead of a 100 ms receive timeout (faster FF answers and rumble).
+
 ## [0.1.0] - 2026-10-09
 
 First usable version.

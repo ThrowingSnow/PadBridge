@@ -13,13 +13,18 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use midi::MidiPort;
 use pad::VirtualPad;
-use protocol::{Packet, PACKET_LEN, TYPE_BYE, TYPE_MIDI, TYPE_MIDI_IN, TYPE_PING, TYPE_PONG, TYPE_STATE};
+use protocol::{Packet, PACKET_LEN, TYPE_BYE, TYPE_MIDI, TYPE_MIDI_IN, TYPE_PING, TYPE_PONG, TYPE_RUMBLE, TYPE_STATE};
+use std::os::unix::io::AsRawFd;
 
 /// No packet for this long: release everything so nothing keeps "running".
 const SILENCE_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_PADS: u8 = 4;
 /// MIDI from ALSA is only forwarded to a Mac heard from this recently.
 const PEER_TIMEOUT: Duration = Duration::from_secs(5);
+/// Upper bound for one loop iteration: silence checks and rumble refresh.
+const TICK: Duration = Duration::from_millis(20);
+/// While a pad rumbles, repeat its level this often (the Mac stops after 500 ms of silence).
+const RUMBLE_REFRESH: Duration = Duration::from_millis(200);
 
 /// Everything both the UDP loop and the ALSA thread need to send to the Mac.
 struct Outbox {
@@ -49,15 +54,28 @@ impl Outbox {
         let _ = self.socket.send_to(&protocol::encode(&self.key, &packet), to);
     }
 
+    /// The Mac, if heard from recently.
+    fn live_peer(&self) -> Option<SocketAddr> {
+        let (peer, seen) = (*self.peer.lock().unwrap())?;
+        (seen.elapsed() <= PEER_TIMEOUT).then_some(peer)
+    }
+
     /// Sends a MIDI message from ALSA to the Mac (twice, see protocol.rs).
     fn send_midi(&self, message: Vec<u8>) {
-        let Some((peer, seen)) = *self.peer.lock().unwrap() else { return };
-        if seen.elapsed() > PEER_TIMEOUT {
-            return;
-        }
+        let Some(peer) = self.live_peer() else { return };
         let payload = protocol::midi_payload(&[message]);
         for _ in 0..2 {
             self.send(TYPE_MIDI_IN, 0, payload, peer);
+        }
+    }
+
+    fn send_rumble(&self, pad: u8, (strong, weak): (u8, u8), copies: usize) {
+        let Some(peer) = self.live_peer() else { return };
+        let mut payload = [0u8; 16];
+        payload[0] = strong;
+        payload[1] = weak;
+        for _ in 0..copies {
+            self.send(TYPE_RUMBLE, pad, payload, peer);
         }
     }
 }
@@ -106,13 +124,15 @@ struct Slot {
     pad: VirtualPad,
     last_packet: Instant,
     idle: bool,
+    rumble_sent: (u8, u8),
+    rumble_sent_at: Instant,
 }
 
 fn main() {
     let args = parse_args().unwrap_or_else(|e| fail(&e));
     let key = load_key(&args.key_file).unwrap_or_else(|e| fail(&e));
     let socket = UdpSocket::bind((args.bind.as_str(), args.port)).unwrap_or_else(|e| fail(&format!("bind: {e}")));
-    socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    socket.set_nonblocking(true).unwrap();
     eprintln!("padbridge-netpad listening on {}:{}", args.bind, args.port);
 
     let outbox = Arc::new(Outbox {
@@ -142,7 +162,14 @@ fn main() {
     let mut buf = [0u8; 512];
 
     loop {
-        if let Ok((len, from)) = socket.recv_from(&mut buf) {
+        // Sleep until a datagram arrives, a game sends a rumble request, or the tick passes.
+        let mut fds: Vec<libc::pollfd> = std::iter::once(socket.as_raw_fd())
+            .chain(slots.values().map(|s| s.pad.fd()))
+            .map(|fd| libc::pollfd { fd, events: libc::POLLIN, revents: 0 })
+            .collect();
+        unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, TICK.as_millis() as i32) };
+
+        while let Ok((len, from)) = socket.recv_from(&mut buf) {
             if len == PACKET_LEN {
                 if let Some(packet) = protocol::decode(&key, &buf[..len]) {
                     if packet.seq > last_seq && packet.pad < MAX_PADS {
@@ -163,6 +190,15 @@ fn main() {
                 let _ = slot.pad.neutral();
                 eprintln!("pad {index}: sender silent, released all inputs");
             }
+            slot.pad.process_force_feedback();
+            let level = slot.pad.rumble();
+            let changed = level != slot.rumble_sent;
+            if changed || (level != (0, 0) && slot.rumble_sent_at.elapsed() >= RUMBLE_REFRESH) {
+                // "Off" goes out twice: losing it would leave the motors running until the Mac's timeout.
+                outbox.send_rumble(*index, level, if level == (0, 0) { 2 } else { 1 });
+                slot.rumble_sent = level;
+                slot.rumble_sent_at = Instant::now();
+            }
         }
     }
 }
@@ -176,7 +212,7 @@ fn handle(outbox: &Outbox, midi: Option<&MidiPort>, from: SocketAddr, packet: Pa
                     Ok(mut pad) => {
                         let path = pad.device_path().unwrap_or_else(|| "?".into());
                         eprintln!("pad {}: created virtual Xbox 360 pad at {path}", packet.pad);
-                        e.insert(Slot { pad, last_packet: Instant::now(), idle: false })
+                        e.insert(Slot { pad, last_packet: Instant::now(), idle: false, rumble_sent: (0, 0), rumble_sent_at: Instant::now() })
                     }
                     Err(err) => {
                         eprintln!("pad {}: cannot create uinput device: {err}", packet.pad);

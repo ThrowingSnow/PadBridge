@@ -7,7 +7,7 @@
 //! |-----|------|-----------------------------------------------------------|
 //! | 0   | 4    | magic "PBG1"                                              |
 //! | 4   | 1    | type: 1 state, 2 ping, 3 bye, 4 MIDI (Mac -> daemon),     |
-//! |     |      |       0x81 pong, 0x84 MIDI (daemon -> Mac)                |
+//! |     |      |       0x81 pong, 0x82 rumble, 0x84 MIDI (daemon -> Mac)   |
 //! | 5   | 1    | pad index 0..=3                                           |
 //! | 6   | 2    | reserved (0)                                              |
 //! | 8   | 8    | sequence, strictly increasing per sender                  |
@@ -21,6 +21,9 @@
 //! MIDI packets: byte 16 = message count (1..=5), then five 3-byte slots, each
 //! one MIDI message padded with zeros (length follows from the status byte).
 //! MIDI packets are sent twice; the sequence check drops the duplicate.
+//! Rumble: byte 16 = heavy (left) motor, byte 17 = light (right) motor, 0..=255.
+//! Repeated every 200 ms while non-zero; the Mac stops the motors itself when
+//! it hears nothing for 500 ms, so a lost "off" cannot leave the pad buzzing.
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -35,6 +38,7 @@ pub const TYPE_PING: u8 = 2;
 pub const TYPE_BYE: u8 = 3;
 pub const TYPE_MIDI: u8 = 4;
 pub const TYPE_PONG: u8 = 0x81;
+pub const TYPE_RUMBLE: u8 = 0x82;
 pub const TYPE_MIDI_IN: u8 = 0x84;
 
 pub const MIDI_PER_PACKET: usize = 5;

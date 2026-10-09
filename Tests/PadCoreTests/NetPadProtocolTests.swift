@@ -67,3 +67,18 @@ struct NetPadMIDITests {
         #expect(data[4] == 4, "type MIDI")
     }
 }
+
+struct NetPadSettingsTests {
+    @Test func oldSettingsFileKeepsValuesAndEnablesRumble() throws {
+        let json = #"{"enabled":true,"host":"192.0.2.20","port":48100}"#
+        let s = try JSONDecoder().decode(NetPadOutput.Settings.self, from: Data(json.utf8))
+        #expect(s.enabled && s.host == "192.0.2.20" && s.rumble)
+    }
+
+    @Test func rumblePacketDecodes() {
+        let key = SymmetricKey(data: [UInt8](repeating: 7, count: 32))
+        let data = NetPadProtocol.encode(.init(kind: .rumble, pad: 1, seq: 5, payload: [200, 40]), key: key)
+        let packet = NetPadProtocol.decode(data, key: key)
+        #expect(packet?.kind == .rumble && packet?.pad == 1 && packet?.payload.prefix(2) == [200, 40])
+    }
+}

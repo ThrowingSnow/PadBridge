@@ -30,6 +30,10 @@ struct NetworkView: View {
                     }
                 }
                 GridRow {
+                    Text("Rumble")
+                    Toggle("Spiele auf dem Host dürfen den Controller vibrieren lassen", isOn: $model.netSettings.rumble)
+                }
+                GridRow {
                     Text("Port")
                     TextField("48100", value: $model.netSettings.port, format: .number.grouping(.never))
                         .frame(width: 80)

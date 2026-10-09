@@ -17,11 +17,24 @@ public final class NetPadOutput {
         public var enabled: Bool
         public var host: String
         public var port: UInt16
+        /// Let games on the host drive the pad's motors.
+        public var rumble: Bool
 
-        public init(enabled: Bool = false, host: String = "192.0.2.10", port: UInt16 = 48100) {
+        public init(enabled: Bool = false, host: String = "192.0.2.10", port: UInt16 = 48100, rumble: Bool = true) {
             self.enabled = enabled
             self.host = host
             self.port = port
+            self.rumble = rumble
+        }
+
+        // Missing fields (older settings files) take their defaults.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let d = Settings()
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+            host = try c.decodeIfPresent(String.self, forKey: .host) ?? d.host
+            port = try c.decodeIfPresent(UInt16.self, forKey: .port) ?? d.port
+            rumble = try c.decodeIfPresent(Bool.self, forKey: .rumble) ?? d.rumble
         }
     }
 
@@ -44,6 +57,11 @@ public final class NetPadOutput {
     public var onMIDI: (([UInt8]) -> Void)?
 
     private let key: SymmetricKey
+    private weak var manager: ControllerManager?
+    /// Pads currently rumbling at the host's request, and when we last heard so.
+    private var rumbleHeard: [UInt8: Date] = [:]
+    /// Without a refresh for this long the motors are stopped (a lost "off").
+    private static let rumbleTimeout: TimeInterval = 0.5
     private let queue = DispatchQueue(label: "padbridge.netpad", qos: .userInteractive)
     private var settings = Settings()
     private var midiLink = false
@@ -65,6 +83,7 @@ public final class NetPadOutput {
 
     public init(manager: ControllerManager, key: SymmetricKey) {
         self.key = key
+        self.manager = manager
         // Start above anything sent by a previous run: the daemon only accepts
         // increasing sequence numbers (replay protection).
         seq = UInt64(Date().timeIntervalSince1970 * 1_000_000)
@@ -77,6 +96,7 @@ public final class NetPadOutput {
             let wasSendingPad = self.settings.enabled
             self.settings = newSettings
             if wasSendingPad && !newSettings.enabled { self.sendByes() }
+            if !newSettings.rumble || !newSettings.enabled { self.stopAllRumble() }
             self.reconcile(restart: endpointChanged)
         }
     }
@@ -163,6 +183,7 @@ public final class NetPadOutput {
 
     private func stopOnQueue(sendBye: Bool) {
         if sendBye, connection != nil { sendByes() }
+        stopAllRumble()
         timer?.cancel()
         timer = nil
         connection?.cancel()
@@ -188,6 +209,8 @@ public final class NetPadOutput {
                     self.publishStatus()
                 case .midiIn:
                     for message in NetPadProtocol.midiMessages(packet.payload) { self.onMIDI?(message) }
+                case .rumble:
+                    self.applyRumble(pad: packet.pad, heavy: packet.payload[0], light: packet.payload[1])
                 default:
                     break
                 }
@@ -196,7 +219,28 @@ public final class NetPadOutput {
         }
     }
 
+    private func applyRumble(pad: UInt8, heavy: UInt8, light: UInt8) {
+        guard settings.rumble, settings.enabled, let device = device(forPad: pad) else { return }
+        device.setRumble(low: Float(heavy) / 255, high: Float(light) / 255)
+        if heavy == 0 && light == 0 { rumbleHeard[pad] = nil } else { rumbleHeard[pad] = Date() }
+    }
+
+    private func stopAllRumble() {
+        for pad in rumbleHeard.keys { device(forPad: pad)?.setRumble(low: 0, high: 0) }
+        rumbleHeard.removeAll()
+    }
+
+    private func device(forPad pad: UInt8) -> ControllerDevice? {
+        guard let id = pads.first(where: { $0.value == pad })?.key else { return nil }
+        return manager?.device(id: id)
+    }
+
     private func tick() {
+        let now = Date()
+        for (pad, heard) in rumbleHeard where now.timeIntervalSince(heard) > Self.rumbleTimeout {
+            device(forPad: pad)?.setRumble(low: 0, high: 0)
+            rumbleHeard[pad] = nil
+        }
         for (pad, state) in lastStates where settings.enabled {
             send(NetPadProtocol.state(pad: pad, seq: nextSeq(), state: state, key: key))
         }
