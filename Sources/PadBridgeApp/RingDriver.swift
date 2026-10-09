@@ -10,7 +10,7 @@ final class RingDriver {
         case manual, random
         /// Clock: LED = bar within 4 bars (bar 1 -> LED 1 ... bar 4 -> LED 4), blinking on every beat.
         case clockBar
-        /// Clock: LED = beat within the bar, so every beat the next LED blinks.
+        /// Clock: every beat the next LED blinks, going round the ring clockwise.
         case clockBeat
         var id: String { rawValue }
         var isClock: Bool { self == .clockBar || self == .clockBeat }
@@ -68,11 +68,16 @@ final class RingDriver {
         let mode = currentMode
         guard mode.isClock else { return }
         switch cue {
-        case .beat(let beat, let bar): show(.quadrant((mode == .clockBar ? bar : beat) % 4 + 1))
+        case .beat(let beat, let bar):
+            show(.quadrant(mode == .clockBar ? bar % 4 + 1 : Self.clockwise[beat % 4]))
         case .off: show(.off)
         case .stopped: show(.quadrant(1))
         }
     }
+
+    /// LED numbers are 1 top-left, 2 top-right, 3 bottom-left, 4 bottom-right,
+    /// so going round the ring is 1, 2, 4, 3.
+    private static let clockwise = [1, 2, 4, 3]
 
     private func show(_ indicator: PlayerIndicator) {
         for device in manager.connected { device.setPlayerIndicator(indicator) }
