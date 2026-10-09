@@ -47,8 +47,10 @@ public final class NetPadOutput {
         public var pads: [String: Int]   // device id -> pad index
         public var error: String?
         public var midiLink: Bool
+        public var inputLink: Bool
 
-        public static let off = Status(sending: false, latencyMs: nil, daemonAnswering: false, pads: [:], error: nil, midiLink: false)
+        public static let off = Status(sending: false, latencyMs: nil, daemonAnswering: false, pads: [:], error: nil,
+                                       midiLink: false, inputLink: false)
     }
 
     /// Called on an internal queue whenever the status changes.
@@ -65,6 +67,7 @@ public final class NetPadOutput {
     private let queue = DispatchQueue(label: "padbridge.netpad", qos: .userInteractive)
     private var settings = Settings()
     private var midiLink = false
+    private var inputLink = false
     private var ready = false
     /// MIDI sent before the connection is ready (e.g. the initial value burst
     /// on connect); flushed once it is. Gamepad state needs no buffer, it repeats.
@@ -109,6 +112,26 @@ public final class NetPadOutput {
         }
     }
 
+    /// Keeps the link open for keyboard/mouse emulation on the host.
+    public func setInputLink(_ on: Bool) {
+        queue.async {
+            self.inputLink = on
+            self.reconcile(restart: false)
+        }
+    }
+
+    /// Keyboard/mouse events for the host; empty = keepalive for held keys.
+    public func sendInput(_ events: [(type: UInt8, a: Int16, b: Int16)]) {
+        queue.async {
+            guard self.connection != nil, self.ready else { return }
+            for datagram in NetPadProtocol.input(events, nextSeq: self.nextSeq, key: self.key) {
+                // Twice, like MIDI: a lost key-up would leave a key stuck.
+                self.send(datagram)
+                self.send(datagram)
+            }
+        }
+    }
+
     public func sendMIDI(_ messages: [[UInt8]]) {
         queue.async {
             guard self.connection != nil, !messages.isEmpty else { return }
@@ -129,7 +152,7 @@ public final class NetPadOutput {
     }
 
     private func reconcile(restart: Bool) {
-        let wanted = settings.enabled || midiLink
+        let wanted = settings.enabled || midiLink || inputLink
         if connection != nil, !wanted || restart { stopOnQueue(sendBye: settings.enabled) }
         if connection == nil, wanted { startOnQueue() }
         publishStatus()
@@ -293,7 +316,7 @@ public final class NetPadOutput {
         let answering = lastPong.map { Date().timeIntervalSince($0) < 3 } ?? false
         let status = Status(sending: connection != nil, latencyMs: answering ? latencyMs : nil,
                             daemonAnswering: answering, pads: settings.enabled ? pads.mapValues(Int.init) : [:],
-                            error: lastError, midiLink: midiLink)
+                            error: lastError, midiLink: midiLink, inputLink: inputLink)
         guard status != lastStatus else { return }
         lastStatus = status
         onStatus?(status)

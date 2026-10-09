@@ -67,6 +67,9 @@ struct NetworkView: View {
             if s.midiLink {
                 Text("MIDI läuft über diese Verbindung (MIDI-Tab → Ziel: Tower).").font(.caption).foregroundStyle(.secondary)
             }
+            if s.inputLink {
+                Text("Tastatur/Maus läuft über diese Verbindung.").font(.caption).foregroundStyle(.secondary)
+            }
             ForEach(model.devices) { device in
                 if let pad = s.pads[device.id] {
                     Text("\(device.name) → virtuelles Pad \(pad + 1)").font(.caption).foregroundStyle(.secondary)

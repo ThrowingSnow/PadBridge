@@ -82,3 +82,23 @@ struct NetPadSettingsTests {
         #expect(packet?.kind == .rumble && packet?.pad == 1 && packet?.payload.prefix(2) == [200, 40])
     }
 }
+
+struct NetPadInputTests {
+    private let key = SymmetricKey(data: [UInt8](repeating: 7, count: 32))
+
+    /// Layout must match protocol.rs `input_events`.
+    @Test func inputPayloadLayout() {
+        var seq: UInt64 = 0
+        let packets = NetPadProtocol.input([(1, 30, 1), (2, -5, 300), (3, 120, 0), (1, 0x110, 0)],
+                                           nextSeq: { seq += 1; return seq }, key: key)
+        #expect(packets.count == 2)
+        let p = [UInt8](packets[0])
+        #expect(p[4] == 5, "type input")
+        #expect(Array(p[16..<27]) == [3, 1, 30, 0, 1, 0, 2, 0xFB, 0xFF, 0x2C, 0x01])
+    }
+
+    @Test func emptyInputIsAKeepalive() {
+        let packets = NetPadProtocol.input([], nextSeq: { 1 }, key: key)
+        #expect(packets.count == 1 && [UInt8](packets[0])[16] == 0)
+    }
+}

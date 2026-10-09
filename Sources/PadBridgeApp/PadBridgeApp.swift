@@ -16,6 +16,7 @@ struct PadBridgeApp: App {
             TabView {
                 LiveMonitorView().tabItem { Text("Monitor") }
                 MIDIView().tabItem { Text("MIDI") }
+                KeyMouseView().tabItem { Text("Tastatur/Maus") }
                 NetworkView().tabItem { Text("Netzwerk") }
             }
             .environmentObject(model)

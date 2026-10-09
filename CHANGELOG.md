@@ -11,6 +11,13 @@ versioned separately by its magic (`PBG1` = protocol v1).
   (upload/erase/play/stop/gain), the daemon forwards motor levels (packet 0x82),
   the Mac drives the pad's motors; 500 ms safety stop if updates stop.
   Toggle in the Network tab.
+- Keyboard/mouse emulation (new tab), running alongside the gamepad:
+  per stick mouse / scroll / WASD / arrows, per button or trigger a mouse click
+  or a key with modifiers, speed/curve/deadzone, "desktop" preset.
+  Target switch: this Mac (CGEvent, needs Accessibility permission; pointer
+  deltas set for captured-mouse apps like Moonlight) or the Linux host
+  (virtual "PadBridge Keyboard/Mouse" via uinput, hi-res scrolling,
+  keys released after 500 ms of silence).
 
 ### Changed
 - padbridge-netpad waits on the socket and all virtual pads with `poll()`

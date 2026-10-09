@@ -33,9 +33,16 @@ let package = Package(
         // Output: UDP to padbridge-netpad (Linux uinput), see linux/padbridge-netpad.
         .target(name: "PadNet", dependencies: ["PadCore"]),
 
-        .executableTarget(name: "padbridge-cli", dependencies: ["PadCore", "PadUSB"]),
-        .executableTarget(name: "PadBridgeApp", dependencies: ["PadCore", "PadUSB", "PadMIDI", "PadNet"]),
+        // Output: keyboard/mouse emulation (CGEvent on the Mac, or wire events for Linux).
+        .target(
+            name: "PadKeys",
+            dependencies: ["PadCore"],
+            linkerSettings: [.linkedFramework("ApplicationServices")]
+        ),
 
-        .testTarget(name: "PadCoreTests", dependencies: ["PadCore", "PadUSB", "PadMIDI", "PadNet"]),
+        .executableTarget(name: "padbridge-cli", dependencies: ["PadCore", "PadUSB"]),
+        .executableTarget(name: "PadBridgeApp", dependencies: ["PadCore", "PadUSB", "PadMIDI", "PadNet", "PadKeys"]),
+
+        .testTarget(name: "PadCoreTests", dependencies: ["PadCore", "PadUSB", "PadMIDI", "PadNet", "PadKeys"]),
     ]
 )

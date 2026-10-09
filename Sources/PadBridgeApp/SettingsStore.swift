@@ -1,5 +1,6 @@
 import Foundation
 import PadMIDI
+import PadKeys
 import PadNet
 
 /// Persists settings as JSON in ~/Library/Application Support/PadBridge/.
@@ -12,6 +13,17 @@ enum SettingsStore {
 
     private static var midiURL: URL { directory.appendingPathComponent("midi-mapping.json") }
     private static var netURL: URL { directory.appendingPathComponent("netpad.json") }
+    private static var keysURL: URL { directory.appendingPathComponent("keymouse.json") }
+
+    static func loadKeyMouse() -> KeyMouseMapping {
+        guard let data = try? Data(contentsOf: keysURL),
+              let mapping = try? JSONDecoder().decode(KeyMouseMapping.self, from: data) else { return .default }
+        return mapping
+    }
+
+    static func save(_ mapping: KeyMouseMapping) throws {
+        try write(mapping, to: keysURL)
+    }
 
     static func loadNetSettings() -> NetPadOutput.Settings {
         guard let data = try? Data(contentsOf: netURL),

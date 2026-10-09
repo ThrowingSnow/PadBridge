@@ -6,7 +6,7 @@
 //! | off | size | field                                                     |
 //! |-----|------|-----------------------------------------------------------|
 //! | 0   | 4    | magic "PBG1"                                              |
-//! | 4   | 1    | type: 1 state, 2 ping, 3 bye, 4 MIDI (Mac -> daemon),     |
+//! | 4   | 1    | type: 1 state, 2 ping, 3 bye, 4 MIDI, 5 input (Mac -> d.) |
 //! |     |      |       0x81 pong, 0x82 rumble, 0x84 MIDI (daemon -> Mac)   |
 //! | 5   | 1    | pad index 0..=3                                           |
 //! | 6   | 2    | reserved (0)                                              |
@@ -21,6 +21,10 @@
 //! MIDI packets: byte 16 = message count (1..=5), then five 3-byte slots, each
 //! one MIDI message padded with zeros (length follows from the status byte).
 //! MIDI packets are sent twice; the sequence check drops the duplicate.
+//! Input (keyboard/mouse): byte 16 = event count (0..=3, 0 = keepalive for held
+//! keys), then three 5-byte events (type u8, a i16, b i16): type 1 key/button
+//! (a = Linux KEY_/BTN_ code, b = 1 down / 0 up), 2 move (a = dx, b = dy),
+//! 3 scroll (a = vertical, b = horizontal, 1/120 detents). Sent twice.
 //! Rumble: byte 16 = heavy (left) motor, byte 17 = light (right) motor, 0..=255.
 //! Repeated every 200 ms while non-zero; the Mac stops the motors itself when
 //! it hears nothing for 500 ms, so a lost "off" cannot leave the pad buzzing.
@@ -37,6 +41,7 @@ pub const TYPE_STATE: u8 = 1;
 pub const TYPE_PING: u8 = 2;
 pub const TYPE_BYE: u8 = 3;
 pub const TYPE_MIDI: u8 = 4;
+pub const TYPE_INPUT: u8 = 5;
 pub const TYPE_PONG: u8 = 0x81;
 pub const TYPE_RUMBLE: u8 = 0x82;
 pub const TYPE_MIDI_IN: u8 = 0x84;
@@ -59,6 +64,17 @@ pub fn midi_messages(payload: &[u8; 16]) -> Vec<Vec<u8>> {
         .map(|i| &payload[1 + i * 3..4 + i * 3])
         .filter(|slot| slot[0] & 0x80 != 0)
         .map(|slot| slot[..midi_len(slot[0])].to_vec())
+        .collect()
+}
+
+/// Keyboard/mouse events (type, a, b) carried in a TYPE_INPUT payload.
+pub fn input_events(payload: &[u8; 16]) -> Vec<(u8, i16, i16)> {
+    let count = (payload[0] as usize).min(3);
+    (0..count)
+        .map(|i| {
+            let e = &payload[1 + i * 5..6 + i * 5];
+            (e[0], i16::from_le_bytes([e[1], e[2]]), i16::from_le_bytes([e[3], e[4]]))
+        })
         .collect()
 }
 
@@ -191,6 +207,13 @@ mod tests {
         let msgs = vec![vec![0xB0, 20, 64], vec![0xF8], vec![0xF2, 0x00, 0x01], vec![0xC1, 5]];
         assert_eq!(midi_messages(&midi_payload(&msgs)), msgs);
         assert_eq!(midi_payload(&[vec![0x90, 60, 127]])[..4], [1, 0x90, 60, 127]);
+    }
+
+    #[test]
+    fn input_payload_layout() {
+        // Same packet as NetPadInputTests.inputPayloadLayout on the Mac.
+        let payload = [3, 1, 30, 0, 1, 0, 2, 0xFB, 0xFF, 0x2C, 0x01, 3, 120, 0, 0, 0];
+        assert_eq!(input_events(&payload), vec![(1, 30, 1), (2, -5, 300), (3, 120, 0)]);
     }
 
     #[test]

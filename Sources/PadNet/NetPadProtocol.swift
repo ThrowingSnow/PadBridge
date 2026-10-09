@@ -11,6 +11,8 @@ import PadCore
 /// (i16, up/right positive), 4 reserved. Ping/pong: u64 timestamp, echoed.
 /// MIDI (both directions): count byte + five 3-byte slots; sent twice, the
 /// receiver's sequence check drops the duplicate.
+/// Input (keyboard/mouse, Mac -> daemon): count byte + three 5-byte events
+/// (type u8, a i16, b i16); sent twice. Count 0 = keepalive for held keys.
 /// Rumble (daemon -> Mac): heavy motor, light motor (0...255), repeated every
 /// 200 ms while non-zero.
 public enum NetPadProtocol {
@@ -19,7 +21,7 @@ public enum NetPadProtocol {
     static let magic: [UInt8] = Array("PBG1".utf8)
 
     public enum Kind: UInt8 {
-        case state = 1, ping = 2, bye = 3, midi = 4
+        case state = 1, ping = 2, bye = 3, midi = 4, input = 5
         case pong = 0x81, rumble = 0x82, midiIn = 0x84
     }
 
@@ -62,6 +64,20 @@ public enum NetPadProtocol {
             var payload = [UInt8(chunk.count)]
             for message in chunk { payload += Array(message.prefix(3)) + [UInt8](repeating: 0, count: 3 - min(message.count, 3)) }
             return encode(Packet(kind: .midi, pad: 0, seq: nextSeq(), payload: payload), key: key)
+        }
+    }
+
+    static let inputsPerPacket = 3
+
+    /// Keyboard/mouse events (type, a, b) -> input packets, 3 events each.
+    /// No events produces one empty keepalive packet.
+    public static func input(_ events: [(type: UInt8, a: Int16, b: Int16)], nextSeq: () -> UInt64, key: SymmetricKey) -> [Data] {
+        let starts = events.isEmpty ? [0] : Array(stride(from: 0, to: events.count, by: inputsPerPacket))
+        return starts.map { start in
+            let chunk = events.isEmpty ? [] : events[start..<min(start + inputsPerPacket, events.count)]
+            var payload = [UInt8(chunk.count)]
+            for e in chunk { payload += [e.type] + le(e.a) + le(e.b) }
+            return encode(Packet(kind: .input, pad: 0, seq: nextSeq(), payload: payload), key: key)
         }
     }
 

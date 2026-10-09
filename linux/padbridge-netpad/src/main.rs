@@ -1,5 +1,6 @@
 //! padbridge-netpad: UDP -> uinput bridge for PadBridge (see protocol.rs).
 
+mod keymouse;
 mod midi;
 mod pad;
 mod protocol;
@@ -11,9 +12,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use keymouse::KeyMouse;
 use midi::MidiPort;
 use pad::VirtualPad;
-use protocol::{Packet, PACKET_LEN, TYPE_BYE, TYPE_MIDI, TYPE_MIDI_IN, TYPE_PING, TYPE_PONG, TYPE_RUMBLE, TYPE_STATE};
+use protocol::{Packet, PACKET_LEN, TYPE_BYE, TYPE_INPUT, TYPE_MIDI, TYPE_MIDI_IN, TYPE_PING, TYPE_PONG, TYPE_RUMBLE, TYPE_STATE};
 use std::os::unix::io::AsRawFd;
 
 /// No packet for this long: release everything so nothing keeps "running".
@@ -120,6 +122,13 @@ fn load_key(path: &PathBuf) -> Result<Vec<u8>, String> {
     Ok((0..32).map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap()).collect())
 }
 
+/// Keyboard/mouse emulation, created on the first input packet.
+#[derive(Default)]
+struct Input {
+    device: Option<KeyMouse>,
+    last_packet: Option<Instant>,
+}
+
 struct Slot {
     pad: VirtualPad,
     last_packet: Instant,
@@ -156,6 +165,7 @@ fn main() {
     };
 
     let mut slots: HashMap<u8, Slot> = HashMap::new();
+    let mut input = Input::default();
     // Highest sequence seen; anything not above it is a replay or a reordered stale packet.
     let mut last_seq = 0u64;
     let mut peer: Option<SocketAddr> = None;
@@ -179,9 +189,15 @@ fn main() {
                             peer = Some(from);
                         }
                         *outbox.peer.lock().unwrap() = Some((from, Instant::now()));
-                        handle(&outbox, midi.as_ref(), from, packet, &mut slots);
+                        handle(&outbox, midi.as_ref(), from, packet, &mut slots, &mut input);
                     }
                 }
+            }
+        }
+        if let (Some(device), Some(last)) = (input.device.as_mut(), input.last_packet) {
+            if device.holding() && last.elapsed() > SILENCE_TIMEOUT {
+                let _ = device.release_all();
+                eprintln!("keyboard/mouse: sender silent, released all keys");
             }
         }
         for (index, slot) in slots.iter_mut() {
@@ -203,7 +219,7 @@ fn main() {
     }
 }
 
-fn handle(outbox: &Outbox, midi: Option<&MidiPort>, from: SocketAddr, packet: Packet, slots: &mut HashMap<u8, Slot>) {
+fn handle(outbox: &Outbox, midi: Option<&MidiPort>, from: SocketAddr, packet: Packet, slots: &mut HashMap<u8, Slot>, input: &mut Input) {
     match packet.kind {
         TYPE_STATE => {
             let slot = match slots.entry(packet.pad) {
@@ -227,6 +243,26 @@ fn handle(outbox: &Outbox, midi: Option<&MidiPort>, from: SocketAddr, packet: Pa
             }
         }
         TYPE_PING => outbox.send(TYPE_PONG, packet.pad, packet.payload, from),
+        TYPE_INPUT => {
+            input.last_packet = Some(Instant::now());
+            if input.device.is_none() {
+                match KeyMouse::create() {
+                    Ok(device) => {
+                        eprintln!("created virtual keyboard/mouse");
+                        input.device = Some(device);
+                    }
+                    Err(err) => {
+                        eprintln!("cannot create keyboard/mouse device: {err}");
+                        return;
+                    }
+                }
+            }
+            if let Some(device) = input.device.as_mut() {
+                if let Err(err) = device.apply(&protocol::input_events(&packet.payload)) {
+                    eprintln!("keyboard/mouse write failed: {err}");
+                }
+            }
+        }
         TYPE_MIDI => {
             if let Some(midi) = midi {
                 for message in protocol::midi_messages(&packet.payload) {

@@ -1,5 +1,6 @@
 import Foundation
 import PadCore
+import PadKeys
 import PadMIDI
 import PadNet
 import PadUSB
@@ -31,10 +32,17 @@ final class AppModel: ObservableObject {
     @Published private(set) var netStatus = NetPadOutput.Status.off
     @Published private(set) var netKeyHex: String?
 
+    @Published var keyMouse: KeyMouseMapping {
+        didSet { keyMouseChanged() }
+    }
+    /// Accessibility permission for posting events on this Mac.
+    @Published private(set) var accessibilityGranted = MacEventPoster.isTrusted
+
     let manager = ControllerManager(backends: [USBBackend()])
     private let ring: RingDriver
     private var midi: MIDIBridge?
     private var net: NetPadOutput?
+    private var keys: KeyMouseBridge?
 
     private let pendingLock = NSLock()
     nonisolated(unsafe) private var pendingStates: [String: ControllerState] = [:]
@@ -45,6 +53,7 @@ final class AppModel: ObservableObject {
     init() {
         midiMapping = SettingsStore.loadMIDIMapping()
         netSettings = SettingsStore.loadNetSettings()
+        keyMouse = SettingsStore.loadKeyMouse()
         ring = RingDriver(manager: manager)
 
         manager.addListener { [weak self] event in self?.handle(event) }
@@ -76,6 +85,11 @@ final class AppModel: ObservableObject {
             }
             net = output
             netKeyHex = NetPadKey.hexString()
+
+            let keys = KeyMouseBridge(manager: manager, mapping: keyMouse)
+            keys.networkSend = { [weak output] events in output?.sendInput(events.map { ($0.type, $0.a, $0.b) }) }
+            output.setInputLink(keyMouse.enabled && keyMouse.target == .network)
+            self.keys = keys
         } catch {
             append("Netzwerk-Schlüssel konnte nicht erstellt werden: \(error.localizedDescription)")
         }
@@ -83,6 +97,13 @@ final class AppModel: ObservableObject {
 
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.flush() }
+        }
+        // The permission can be granted in System Settings at any time.
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                let granted = MacEventPoster.isTrusted
+                if self?.accessibilityGranted != granted { self?.accessibilityGranted = granted }
+            }
         }
     }
 
@@ -108,6 +129,22 @@ final class AppModel: ObservableObject {
     }
 
     func resetMIDIMapping() { midiMapping = .default }
+
+    func resetKeyMouse() {
+        var preset = KeyMouseMapping.default
+        preset.enabled = keyMouse.enabled
+        preset.target = keyMouse.target
+        keyMouse = preset
+    }
+
+    func requestAccessibility() { MacEventPoster.requestTrust() }
+
+    private func keyMouseChanged() {
+        keys?.setMapping(keyMouse)
+        net?.setInputLink(keyMouse.enabled && keyMouse.target == .network)
+        if keyMouse.enabled, keyMouse.target == .local, !MacEventPoster.isTrusted { MacEventPoster.requestTrust() }
+        try? SettingsStore.save(keyMouse)
+    }
 
     // MARK: Engine events
 
