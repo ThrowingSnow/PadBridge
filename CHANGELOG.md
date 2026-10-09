@@ -4,7 +4,7 @@ Versions follow [Semantic Versioning](https://semver.org). The Mac app and
 `linux/padbridge-netpad` share one version number; the network protocol is
 versioned separately by its magic (`PBG1` = protocol v1).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-10
 
 ### Added
 - Rumble from games on the Linux host: the virtual pad accepts FF_RUMBLE effects
@@ -18,7 +18,6 @@ versioned separately by its magic (`PBG1` = protocol v1).
   deltas set for captured-mouse apps like Moonlight) or the Linux host
   (virtual "PadBridge Keyboard/Mouse" via uinput, hi-res scrolling,
   keys released after 500 ms of silence).
-
 - padbridge-netpad links its ALSA port both ways to a `snd-virmidi` device
   when present, so DAWs that only list rawmidi devices (Bitwig on Linux) see it.
 
