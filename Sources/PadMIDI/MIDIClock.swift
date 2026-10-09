@@ -10,8 +10,9 @@ public enum ClockMessage: Equatable, Sendable {
 
 /// What the LED ring should do in response to the clock.
 public enum RingCue: Equatable, Sendable {
-    /// Beat start: light the quadrant for the current bar (1...4).
-    case on(quadrant: Int)
+    /// Start of a quarter note. Both 0-based: `beat` within the bar (0...3),
+    /// `bar` counted from song start. The ring driver picks the LED from these.
+    case beat(beat: Int, bar: Int)
     /// Half a beat later: dark, so the ring blinks at the tempo.
     case off
     /// Transport stopped.
@@ -20,9 +21,8 @@ public enum RingCue: Equatable, Sendable {
 
 /// Follows 24 PPQN MIDI clock in 4/4: counts beats and bars and estimates BPM.
 ///
-/// Ring behaviour: on every quarter note the quadrant of the current bar lights
-/// up (bar 1 -> LED 1 ... bar 4 -> LED 4, then repeats), and goes dark half a
-/// beat later.
+/// Emits a `.beat` cue on every quarter note and `.off` half a beat later, so a
+/// ring driven by it blinks at the tempo.
 public struct MIDIClockTracker {
     public static let ticksPerBeat = 24
     public static let beatsPerBar = 4
@@ -67,8 +67,8 @@ public struct MIDIClockTracker {
             tick += 1
             switch tick % Self.ticksPerBeat {
             case 0:
-                let bar = tick / (Self.ticksPerBeat * Self.beatsPerBar)
-                return .on(quadrant: bar % 4 + 1)
+                let beats = tick / Self.ticksPerBeat
+                return .beat(beat: beats % Self.beatsPerBar, bar: beats / Self.beatsPerBar)
             case Self.ticksPerBeat / 2:
                 return .off
             default:

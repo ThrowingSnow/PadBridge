@@ -85,8 +85,11 @@ struct LiveMonitorView: View {
                     }
                     HStack {
                         modeButton("Zufall", .random)
-                        modeButton("Clock-Sync", .clock)
-                        if model.ringMode == .clock { ClockBadge(clock: model.clock) }
+                        modeButton("Clock: Takt", .clockBar)
+                        modeButton("Clock: Beat", .clockBeat)
+                    }
+                    if model.ringMode.isClock {
+                        ClockBadge(clock: model.clock)
                     }
                 }
             }

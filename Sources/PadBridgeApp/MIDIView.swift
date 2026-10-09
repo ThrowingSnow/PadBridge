@@ -38,7 +38,7 @@ struct MIDIView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Clock-Eingang").font(.headline)
                 ClockBadge(clock: model.clock)
-                Text("In der DAW MIDI-Clock an „PadBridge“ senden.\nLED-Ring: Monitor → Clock-Sync.")
+                Text("In der DAW MIDI-Clock an „PadBridge“ senden.\nLED-Ring: Monitor → „Clock: Takt“ oder „Clock: Beat“.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

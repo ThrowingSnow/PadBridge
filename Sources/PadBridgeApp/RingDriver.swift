@@ -7,8 +7,13 @@ import PadMIDI
 /// devices (no main-thread hop) to keep the blink tight to the beat.
 final class RingDriver {
     enum Mode: String, CaseIterable, Identifiable {
-        case manual, random, clock
+        case manual, random
+        /// Clock: LED = bar within 4 bars (bar 1 -> LED 1 ... bar 4 -> LED 4), blinking on every beat.
+        case clockBar
+        /// Clock: LED = beat within the bar, so every beat the next LED blinks.
+        case clockBeat
         var id: String { rawValue }
+        var isClock: Bool { self == .clockBar || self == .clockBeat }
     }
 
     private let manager: ControllerManager
@@ -42,7 +47,7 @@ final class RingDriver {
             show(lock.withLock { manualIndicator })
         case .random:
             startRandom()
-        case .clock:
+        case .clockBar, .clockBeat:
             stopRandom()
             // Until the first beat arrives, show the ring is waiting for clock.
             show(.quadrant(1))
@@ -54,15 +59,16 @@ final class RingDriver {
         guard let device = manager.device(id: id) else { return }
         switch currentMode {
         case .manual: device.setPlayerIndicator(lock.withLock { manualIndicator })
-        case .clock: device.setPlayerIndicator(.quadrant(1))
+        case .clockBar, .clockBeat: device.setPlayerIndicator(.quadrant(1))
         case .random: break
         }
     }
 
     func clockCue(_ cue: RingCue) {
-        guard currentMode == .clock else { return }
+        let mode = currentMode
+        guard mode.isClock else { return }
         switch cue {
-        case .on(let quadrant): show(.quadrant(quadrant))
+        case .beat(let beat, let bar): show(.quadrant((mode == .clockBar ? bar : beat) % 4 + 1))
         case .off: show(.off)
         case .stopped: show(.quadrant(1))
         }

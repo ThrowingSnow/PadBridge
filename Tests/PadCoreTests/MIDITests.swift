@@ -75,13 +75,12 @@ struct MIDIClockTests {
         return cues
     }
 
-    @Test func barsMapToQuadrants() {
+    @Test func beatsAndBarsAreCounted() {
         var tracker = MIDIClockTracker()
         var time = 0.0
         _ = tracker.handle(.start, at: time)
-        let cues = run(&tracker, beats: 16, from: &time).filter { if case .on = $0 { return true } else { return false } }
-        // 4 beats per bar on each quadrant, bars 1-4 -> LEDs 1-4.
-        let expected = [1, 2, 3, 4].flatMap { q in Array(repeating: RingCue.on(quadrant: q), count: 4) }
+        let cues = run(&tracker, beats: 8, from: &time).filter { if case .beat = $0 { return true } else { return false } }
+        let expected = (0..<8).map { RingCue.beat(beat: $0 % 4, bar: $0 / 4) }
         #expect(cues == expected)
     }
 
@@ -89,7 +88,7 @@ struct MIDIClockTests {
         var tracker = MIDIClockTracker()
         var time = 0.0
         _ = tracker.handle(.start, at: time)
-        #expect(run(&tracker, beats: 1, from: &time) == [.on(quadrant: 1), .off])
+        #expect(run(&tracker, beats: 1, from: &time) == [.beat(beat: 0, bar: 0), .off])
     }
 
     @Test func bpmIsEstimated() {
@@ -105,7 +104,7 @@ struct MIDIClockTests {
         var time = 0.0
         _ = tracker.handle(.songPosition(32), at: time)   // 32 sixteenths = bar 3
         _ = tracker.handle(.continue, at: time)
-        #expect(run(&tracker, beats: 1, from: &time).first == .on(quadrant: 3))
+        #expect(run(&tracker, beats: 1, from: &time).first == .beat(beat: 0, bar: 2))
         #expect(tracker.position.bar == 3)
     }
 
