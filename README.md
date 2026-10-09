@@ -1,0 +1,54 @@
+# PadBridge
+
+Gamepads on macOS without kernel extensions. Reads a wired Xbox 360 controller
+directly over USB (IOUSBHost, user space) and routes it to:
+
+- **MIDI**: a virtual CoreMIDI port, every control mapped to a CC/note *(planned)*
+- **Network gamepad**: UDP to a small daemon on Linux that creates a real
+  uinput Xbox 360 pad, e.g. for Wine/Proton games streamed with Sunshine/Moonlight *(planned)*
+- **Keyboard/mouse** emulation *(planned)*
+
+Why: the old 360Controller kext is blocked on macOS 14 (IOHIDFamily kexts are
+classified "Unsupported"), and Moonlight cannot see the pad because it is not a
+HID device.
+
+## Architecture
+
+```
+Backends (input)            Canonical state          Mapping (planned)    Outputs (planned)
+USBBackend  ─┐                                                            ┌─► MIDI
+  Xbox360Device              PadButton + PadAxis      profiles, layers,    ├─► Keyboard/Mouse
+HID (later) ─┼──► ControllerManager ──► events ──►     curves, deadzones ─┼─► Net gamepad (UDP)
+GCController (later) ─┘      (+ rumble/LED back)                          └─► OSC
+```
+
+- `PadCore`: device-agnostic model (`PadButton`, `PadAxis`, `ControllerState`,
+  `ControllerDevice`, `ControllerBackend`, `ControllerManager`). Nothing in here
+  knows about USB or a specific pad.
+- `PadUSB`: raw USB backend. `Xbox360Protocol` is pure byte parsing (unit tested);
+  `Xbox360Device` does the IOUSBHost I/O; `USBBackend` handles hotplug.
+- **Adding a controller family** means adding a backend (or a protocol + device
+  class inside `PadUSB`) that emits `ControllerState`. Mapping and outputs do not change.
+
+Units: sticks -1…+1 with **up/right positive**, triggers 0…1.
+
+## Build & run
+
+Needs only the Xcode Command Line Tools (Swift 6).
+
+```sh
+swift build
+swift test
+swift run padbridge-cli            # terminal live monitor (--rumble: buzz on connect)
+swift run PadBridgeApp             # SwiftUI live monitor + menu bar icon
+scripts/bundle.sh                  # build/PadBridge.app
+```
+
+## Roadmap
+
+1. ✅ Core model, USB backend (Xbox 360 wired + clones), live monitor
+2. MIDI output: per-control CC/note table, channel, 14-bit, relative mode, shift layer
+3. Network gamepad: UDP protocol + Rust uinput daemon for the Linux host
+4. Keyboard/mouse output
+5. Profiles (Guide + D-Pad to switch, shown on the LED ring)
+6. More backends: IOHID, GameController.framework
