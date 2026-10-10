@@ -234,3 +234,72 @@ Prüfen ohne DAW: `aseqdump -p PadBridge` oder `amidi -p hw:9,0 -d`.
 - Der Schlüssel gehört nicht ins Repository. Ein neuer Schlüssel entsteht,
   wenn du `netpad.key` auf dem Mac löschst und die App neu startest. Danach
   musst du ihn neu auf den Linux-Host übertragen.
+
+---
+
+## 6. Neue App für Linux (Rust, in Arbeit)
+
+Die neue App `padbridge` läuft unter Linux und kann alles, was bisher die
+Mac-App und der Daemon zusammen konnten. Ein Pad am Linux-Rechner selbst wird
+zu MIDI und Tastatur/Maus, und jede Installation kann **gleichzeitig senden
+und empfangen**. Die Mac-Version folgt; bis dahin sprechen alte und neue Teile
+dasselbe Protokoll und verstehen sich.
+
+### Bauen
+
+Zusätzlich zu den Paketen aus Teil 2:
+
+```sh
+cd PadBridge/rust
+cargo build --release -p padbridge
+install -Dm755 target/release/padbridge ~/.local/bin/padbridge
+padbridge            # mit Fenster
+```
+
+Einstellungen und Schlüssel liegen in `~/.config/padbridge/`, also derselbe
+Schlüssel wie beim alten Daemon.
+
+### Pads am Linux-Rechner
+
+Jedes Gamepad, das Linux kennt (Xbox 360 über den Kernel-Treiber xpad,
+aber auch andere), erscheint im Monitor, auch beim Ein- und Ausstecken.
+Voraussetzung ist die Gruppe `input` (siehe Teil 2).
+
+**LED-Ring:** Der Kernel erlaubt das Setzen der LED standardmässig nur root.
+Diese Regel gibt der Gruppe `input` Schreibrecht. Danach das Pad neu einstecken:
+
+```sh
+echo 'ACTION=="add", SUBSYSTEM=="leds", KERNEL=="xpad*", RUN+="/bin/chgrp input /sys%p/brightness", RUN+="/bin/chmod 0664 /sys%p/brightness"' \
+  | sudo tee /etc/udev/rules.d/71-padbridge-xpad-led.rules
+sudo udevadm control --reload
+```
+
+### Senden und Empfangen
+
+Im Tab **Netzwerk**:
+- **Senden:** Host der Gegenstelle eintragen (oder Preset), „Gamepad an die
+  Gegenstelle senden“. MIDI und Tastatur/Maus wählen das Ziel
+  „Netzwerk-Gegenstelle“ in ihrem eigenen Tab.
+- **Empfangen:** „Pads, MIDI und Tastatur/Maus einer Gegenstelle annehmen“.
+  Das ist das, was bisher der Daemon gemacht hat. Port 48100 darf dafür
+  nicht vom alten Daemon belegt sein.
+
+### Den alten Daemon ersetzen
+
+Ohne Fenster, als Dienst, übernimmt `padbridge --headless --listen` die Rolle
+von `padbridge-netpad`:
+
+```sh
+systemctl --user disable --now padbridge-netpad
+cp PadBridge/rust/app/padbridge.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now padbridge
+journalctl --user -u padbridge -f
+```
+
+Zurück zum alten Daemon: `systemctl --user disable --now padbridge` und
+`systemctl --user enable --now padbridge-netpad`.
+
+> Läuft der Dienst, belegt er Port 48100 und den MIDI-Port. Wer dann zusätzlich
+> das Fenster öffnet, lässt dort „Empfangen“ aus. Sonst meldet die App
+> „Port 48100 nicht verfügbar“.

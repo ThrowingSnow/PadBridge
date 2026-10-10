@@ -1,0 +1,13 @@
+[Unit]
+Description=PadBridge (headless: receives pads, MIDI and keyboard/mouse from a peer)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/padbridge --headless --listen
+Restart=on-failure
+RestartSec=2
+# Input latency matters more than throughput here.
+Nice=-5
+
+[Install]
+WantedBy=default.target

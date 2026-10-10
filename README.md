@@ -12,6 +12,9 @@ directly over USB (IOUSBHost, user space) and routes it to:
 
 **Setup on a new machine: see [DOC.md](DOC.md)** (step by step, German).
 
+A cross-platform rewrite in Rust (Linux and macOS 10.13+, every machine can
+send and receive) is under way in [`rust/`](rust/README.md).
+
 Why: the old 360Controller kext is blocked on macOS 14 (IOHIDFamily kexts are
 classified "Unsupported"), and Moonlight cannot see the pad because it is not a
 HID device.
