@@ -40,7 +40,7 @@ Uninstall-Programm und starte den Mac danach neu.
 ### Bauen und installieren
 
 ```sh
-git clone https://github.com/<user>/PadBridge.git
+git clone https://github.com/ThrowingSnow/PadBridge.git
 cd PadBridge
 swift test                    # optional: alle Tests sollten grün sein
 scripts/bundle.sh             # erzeugt build/PadBridge.app

@@ -66,3 +66,7 @@ scripts/bundle.sh                  # build/PadBridge.app
 4. ✅ Keyboard/mouse output (Mac or Linux host, alongside the gamepad)
 5. Profiles (Guide + D-Pad to switch, shown on the LED ring)
 6. More backends: IOHID, GameController.framework
+
+## License
+
+MIT, see [LICENSE](LICENSE).
