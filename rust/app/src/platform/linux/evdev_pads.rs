@@ -5,12 +5,12 @@
 //! Each pad is opened twice: one handle is read by its own thread, the other
 //! does output (rumble upload, LED via sysfs) from the engine thread.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use evdev::{
     AbsoluteAxisType as Abs, Device, FFEffect, FFEffectData, FFEffectKind, FFEffectType, FFReplay, FFTrigger,
@@ -21,6 +21,8 @@ use padbridge_core::{xbox360, Capabilities, ControllerInfo, ControllerState, Pad
 use crate::platform::{Event, PadOutput};
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(2);
+/// How long a new node may stay unreadable before we warn about it.
+const PERMISSION_GRACE: Duration = Duration::from_secs(5);
 
 const BUTTONS: [(Key, PadButton); 15] = [
     (Key::BTN_SOUTH, PadButton::A),
@@ -43,15 +45,21 @@ const BUTTONS: [(Key, PadButton); 15] = [
 
 pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) {
     let open: Arc<Mutex<HashSet<PathBuf>>> = Arc::default();
+    // Nodes we could not open yet, and when that started. Right after hotplug
+    // udev has not applied the group/ACL yet, so keep retrying quietly.
+    let mut denied: HashMap<PathBuf, (Instant, bool)> = HashMap::new();
     std::thread::Builder::new()
         .name("evdev-scan".into())
         .spawn(move || loop {
-            for path in event_nodes() {
+            let nodes = event_nodes();
+            denied.retain(|path, _| nodes.contains(path));
+            for path in nodes {
                 if open.lock().unwrap().contains(&path) || !is_physical_pad(&path) {
                     continue;
                 }
                 match connect(&path) {
                     Ok((info, output, reader, state)) => {
+                        denied.remove(&path);
                         open.lock().unwrap().insert(path.clone());
                         let id = info.id.clone();
                         if !sink(Event::PadConnected(info, Box::new(output))) {
@@ -68,9 +76,11 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) {
                             });
                     }
                     Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-                        // Remember it so the warning is not repeated every scan.
-                        open.lock().unwrap().insert(path.clone());
-                        sink(Event::Error(format!("Kein Zugriff auf {} (Gruppe „input“ fehlt?)", path.display())));
+                        let (since, warned) = denied.entry(path.clone()).or_insert((Instant::now(), false));
+                        if !*warned && since.elapsed() >= PERMISSION_GRACE {
+                            *warned = true;
+                            sink(Event::Error(format!("Kein Zugriff auf {} (Gruppe „input“ fehlt?)", path.display())));
+                        }
                     }
                     Err(_) => {}
                 }
