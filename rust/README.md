@@ -15,7 +15,8 @@ app/     padbridge: engine thread + egui UI (glow/OpenGL, so it runs on Macs
   net/sender.rs   sends this machine's pads/MIDI/keyboard to a peer
   net/receiver.rs accepts a peer's packets, drives virtual devices (poll loop)
   platform/linux  evdev pads (hotplug, FF rumble, xpad LED), uinput, ALSA
-  platform/stub   placeholder until the macOS backend (libusb, CoreMIDI, CGEvent)
+  platform/macos  libusb pads (rumble, LED), CoreMIDI ports, CGEvent keyboard/mouse
+  platform/stub   placeholder for other systems
 spike/   stage-0 feasibility test for macOS 10.13 (egui/glow + libusb + CoreMIDI)
 ```
 
@@ -35,6 +36,8 @@ MACOSX_DEPLOYMENT_TARGET=10.13 cargo build --release -p padbridge   # macOS
 - [x] Stage 0: macOS 10.13 feasibility (iMac 2010, OpenGL only)
 - [x] Stage 1: core crate, all Swift tests ported
 - [x] Stage 2: Linux app (pads, MIDI, LED, rumble, keyboard/mouse, send + receive)
-- [ ] Stage 3: macOS backend (libusb pad, CoreMIDI, CGEvent), app bundle
+- [x] Stage 3: macOS backend (libusb pad, CoreMIDI, CGEvent), app bundle
+      (`scripts/bundle-macos.sh`); receiver on macOS: MIDI + keyboard/mouse
+      (a virtual game pad needs a driver there)
 - [ ] Stage 4: forward MIDI controllers (per device, both directions), SysEx
 - [ ] Retire the Swift app and padbridge-netpad
