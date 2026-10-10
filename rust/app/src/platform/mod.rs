@@ -2,8 +2,8 @@
 //! engine, network and UI are the same on every platform.
 //!
 //! - Linux: evdev (pads via xpad), uinput (virtual pad, keyboard/mouse), ALSA.
-//! - macOS: comes in stage 3 (libusb, CoreMIDI, CGEvent); until then a stub
-//!   that offers nothing, so the UI still builds and runs there.
+//! - macOS (10.13+): libusb (pads), CoreMIDI, CGEvent.
+//! - anything else: a stub that offers nothing, so the UI still builds.
 
 use std::io;
 use std::sync::mpsc::Sender;
@@ -17,9 +17,14 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::*;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::*;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 mod stub;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use stub::*;
 
 /// What platform code reports to the engine.

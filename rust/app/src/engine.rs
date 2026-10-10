@@ -132,6 +132,8 @@ pub struct Engine {
     midi_port: Option<Box<dyn MidiPort>>,
     keymouse_out: Option<Box<dyn KeyMouseOut>>,
     keymouse_error: Option<String>,
+    /// Opening failed (e.g. macOS Accessibility not granted yet): try again then.
+    keymouse_retry_at: Option<Instant>,
     key: Option<NetKey>,
     link: Option<Link>,
     link_generation: u64,
@@ -193,6 +195,7 @@ impl Engine {
             midi_port: None,
             keymouse_out: None,
             keymouse_error: None,
+            keymouse_retry_at: None,
             key: None,
             link: None,
             link_generation: 0,
@@ -546,12 +549,19 @@ impl Engine {
         }
         match target {
             EmulationTarget::Local => {
-                if self.keymouse_out.is_none() && self.keymouse_error.is_none() {
+                if self.keymouse_out.is_none() && self.keymouse_retry_at.is_none_or(|t| Instant::now() >= t) {
                     match platform::open_keymouse() {
-                        Ok(out) => self.keymouse_out = Some(out),
+                        Ok(out) => {
+                            self.keymouse_out = Some(out);
+                            self.keymouse_error = None;
+                            self.keymouse_retry_at = None;
+                        }
                         Err(e) => {
+                            if self.keymouse_error.is_none() {
+                                self.log(format!("Tastatur/Maus nicht verfügbar: {e}"));
+                            }
                             self.keymouse_error = Some(e.to_string());
-                            self.log(format!("Tastatur/Maus nicht verfügbar: {e}"));
+                            self.keymouse_retry_at = Some(Instant::now() + Duration::from_secs(3));
                         }
                     }
                 }

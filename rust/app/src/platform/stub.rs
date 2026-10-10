@@ -1,4 +1,4 @@
-//! Placeholder for platforms without a backend yet (macOS until stage 3).
+//! Placeholder for platforms without a backend.
 
 use std::io;
 

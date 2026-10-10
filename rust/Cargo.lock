@@ -1760,10 +1760,14 @@ name = "padbridge"
 version = "0.4.0-dev"
 dependencies = [
  "alsa",
+ "core-foundation 0.9.4",
+ "core-graphics",
+ "coremidi",
  "eframe",
  "evdev",
  "libc",
  "padbridge-core",
+ "rusb",
 ]
 
 [[package]]
