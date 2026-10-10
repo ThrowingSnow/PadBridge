@@ -231,15 +231,17 @@ fn apply_abs(state: &mut ControllerState, ranges: &[Range], axis: Abs, value: i3
     }
 }
 
-/// xpad registers the ring as an LED class device ("xpad0") under the USB
-/// interface; writing a pattern number (0..=15) to `brightness` sets it.
+/// xpad registers the ring as an LED class device ("xpad0") on the USB
+/// device, a few levels above the input node; writing a pattern number
+/// (0..=15) to its `brightness` sets it.
 fn led_path(node: &Path) -> Option<PathBuf> {
-    let leds = sysfs_dir(node)?.join("device/device/leds");
-    fs::read_dir(leds)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .find(|e| e.file_name().to_string_lossy().starts_with("xpad"))
-        .map(|e| e.path().join("brightness"))
+    sysfs_dir(node)?.ancestors().take(6).find_map(|dir| {
+        fs::read_dir(dir.join("leds"))
+            .ok()?
+            .filter_map(|e| e.ok())
+            .find(|e| e.file_name().to_string_lossy().starts_with("xpad"))
+            .map(|e| e.path().join("brightness"))
+    })
 }
 
 struct LinuxPad {
