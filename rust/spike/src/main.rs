@@ -33,12 +33,10 @@ fn usb_thread(shared: Arc<Mutex<Pad>>, midi: Arc<Mutex<Option<coremidi::VirtualS
 }
 
 fn run_pad(shared: &Mutex<Pad>, midi: &Mutex<Option<coremidi::VirtualSource>>) -> Result<(), String> {
-    let handle = PADS
-        .iter()
-        .find_map(|&(v, p)| rusb::open_device_with_vid_pid(v, p))
-        .ok_or("nicht gefunden")?;
+    let handle = PADS.iter().find_map(|&(v, p)| rusb::open_device_with_vid_pid(v, p)).ok_or("nicht gefunden")?;
     let device = handle.device();
-    let config = device.active_config_descriptor().or_else(|_| device.config_descriptor(0)).map_err(|e| e.to_string())?;
+    let config =
+        device.active_config_descriptor().or_else(|_| device.config_descriptor(0)).map_err(|e| e.to_string())?;
 
     // Interface 0 (class FF/5D/01) carries the gamepad; find its interrupt endpoints.
     let iface = config.interfaces().next().ok_or("kein Interface")?;
@@ -107,7 +105,10 @@ impl eframe::App for App {
             ui.monospace(format!("Reports: {}", pad.reports));
             ui.monospace(format!("Buttons: {:016b}", pad.buttons));
             ui.monospace(format!("LT {:3}  RT {:3}", pad.lt, pad.rt));
-            ui.monospace(format!("LX {:6} LY {:6}  RX {:6} RY {:6}", pad.sticks[0], pad.sticks[1], pad.sticks[2], pad.sticks[3]));
+            ui.monospace(format!(
+                "LX {:6} LY {:6}  RX {:6} RY {:6}",
+                pad.sticks[0], pad.sticks[1], pad.sticks[2], pad.sticks[3]
+            ));
             ui.add(egui::ProgressBar::new((pad.sticks[0] as f32 + 32768.0) / 65535.0).text("Linker Stick X → CC 20"));
         });
         ui.ctx().request_repaint_after(Duration::from_millis(16));
@@ -128,7 +129,11 @@ fn main() -> eframe::Result {
     // The client must outlive the source; both live for the whole program.
     let client = coremidi::Client::new("PadBridge Spike").ok();
     let source = client.as_ref().and_then(|c| c.virtual_source("PadBridge Spike").ok());
-    let midi_status = if source.is_some() { "virtueller Port „PadBridge Spike“ aktiv".into() } else { "CoreMIDI-Fehler".to_string() };
+    let midi_status = if source.is_some() {
+        "virtueller Port „PadBridge Spike“ aktiv".into()
+    } else {
+        "CoreMIDI-Fehler".to_string()
+    };
     let midi = Arc::new(Mutex::new(source));
     std::mem::forget(client);
 

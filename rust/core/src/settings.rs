@@ -66,10 +66,20 @@ pub struct NetSettings {
     /// Let games on the peer drive this pad's motors.
     pub rumble: bool,
     pub presets: Vec<HostPreset>,
+    /// Accept a peer's pad, MIDI and keyboard/mouse on `port` (virtual devices
+    /// here). Not in the Swift app, which ignores the field.
+    pub listen: bool,
 }
 
 impl Default for NetSettings {
     fn default() -> Self {
-        NetSettings { enabled: false, host: String::new(), port: DEFAULT_PORT, rumble: true, presets: Vec::new() }
+        NetSettings {
+            enabled: false,
+            host: String::new(),
+            port: DEFAULT_PORT,
+            rumble: true,
+            presets: Vec::new(),
+            listen: false,
+        }
     }
 }

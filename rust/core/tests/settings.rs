@@ -66,7 +66,10 @@ fn reads_and_writes_swift_net_settings() {
     let s: NetSettings = serde_json::from_str(&fixture("swift-netpad.json")).unwrap();
     assert_eq!(s.presets, vec![HostPreset { name: "Desktop".into(), host: "192.0.2.10".into() }]);
     assert!(s.enabled && !s.rumble && s.port == 48100);
-    same_json(&s, &fixture("swift-netpad.json"));
+    // `listen` exists only in the Rust app; the Swift app ignores it.
+    let mut ours = serde_json::to_value(&s).unwrap();
+    ours.as_object_mut().unwrap().remove("listen");
+    same_json(&ours, &fixture("swift-netpad.json"));
     let old: NetSettings = serde_json::from_str(r#"{"enabled":true,"host":"192.0.2.10","port":48100}"#).unwrap();
     assert!(old.rumble && old.presets.is_empty(), "fields added later take their defaults");
 }
