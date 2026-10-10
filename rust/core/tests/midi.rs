@@ -228,7 +228,9 @@ fn ring_beat_mode_goes_round_clockwise() {
 fn ring_bar_mode_follows_bars() {
     let mut ring = Ring::new();
     ring.set_mode(RingMode::ClockBar);
-    assert_eq!(ring.clock_cue(RingCue::Beat { beat: 3, bar: 5 }), Some(PlayerIndicator::Quadrant(2)));
+    let leds: Vec<_> = (0..5).map(|bar| ring.clock_cue(RingCue::Beat { beat: 3, bar })).collect();
+    let q = PlayerIndicator::Quadrant;
+    assert_eq!(leds, vec![Some(q(1)), Some(q(2)), Some(q(4)), Some(q(3)), Some(q(1))], "clockwise, one LED per bar");
     assert_eq!(ring.clock_cue(RingCue::Off), Some(PlayerIndicator::Off));
     assert_eq!(ring.clock_cue(RingCue::Stopped), Some(PlayerIndicator::Quadrant(1)));
 }

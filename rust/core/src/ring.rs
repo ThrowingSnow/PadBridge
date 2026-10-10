@@ -9,7 +9,7 @@ use crate::midi::RingCue;
 pub enum RingMode {
     Manual,
     Random,
-    /// Clock: LED = bar within 4 bars (bar 1 -> LED 1 ... bar 4 -> LED 4), blinking on every beat.
+    /// Clock: the next LED clockwise every bar (1, 2, 4, 3), blinking on every beat.
     ClockBar,
     /// Clock: every beat the next LED blinks, going round the ring clockwise.
     ClockBeat,
@@ -87,11 +87,11 @@ impl Ring {
             return None;
         }
         Some(match cue {
-            RingCue::Beat { beat, bar } => PlayerIndicator::Quadrant(if self.mode == RingMode::ClockBar {
-                (bar.rem_euclid(4) + 1) as u8
-            } else {
-                CLOCKWISE[beat.rem_euclid(4) as usize]
-            }),
+            // Both modes go round the ring clockwise: per bar or per beat.
+            RingCue::Beat { beat, bar } => {
+                let step = if self.mode == RingMode::ClockBar { bar } else { beat };
+                PlayerIndicator::Quadrant(CLOCKWISE[step.rem_euclid(4) as usize])
+            }
             RingCue::Off => PlayerIndicator::Off,
             RingCue::Stopped => PlayerIndicator::Quadrant(1),
         })
