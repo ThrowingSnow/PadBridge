@@ -30,9 +30,8 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) {
             failed.retain(|id| present.contains(id));
             for device in devices {
                 let Ok(desc) = device.device_descriptor() else { continue };
-                let Some(&(_, _, name)) = xbox360::KNOWN_DEVICES
-                    .iter()
-                    .find(|(v, p, _)| *v == desc.vendor_id() && *p == desc.product_id())
+                let Some(&(_, _, name)) =
+                    xbox360::KNOWN_DEVICES.iter().find(|(v, p, _)| *v == desc.vendor_id() && *p == desc.product_id())
                 else {
                     continue;
                 };

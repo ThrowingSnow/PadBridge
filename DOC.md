@@ -286,8 +286,9 @@ Im Tab **Netzwerk**:
 
 ### Den alten Daemon ersetzen
 
-Ohne Fenster, als Dienst, übernimmt `padbridge --headless --listen` die Rolle
-von `padbridge-netpad`:
+Ohne Fenster, als Dienst, übernimmt `padbridge --headless --listen --receive-only`
+die Rolle von `padbridge-netpad`. Er empfängt nur und liest keine Pads an diesem
+Rechner. So kann das Fenster daneben laufen, ohne dass MIDI doppelt ankommt:
 
 ```sh
 systemctl --user disable --now padbridge-netpad
@@ -300,6 +301,6 @@ journalctl --user -u padbridge -f
 Zurück zum alten Daemon: `systemctl --user disable --now padbridge` und
 `systemctl --user enable --now padbridge-netpad`.
 
-> Läuft der Dienst, belegt er Port 48100 und den MIDI-Port. Wer dann zusätzlich
-> das Fenster öffnet, lässt dort „Empfangen“ aus. Sonst meldet die App
-> „Port 48100 nicht verfügbar“.
+> Läuft der Dienst, belegt er Port 48100. Im Fenster daneben „Empfangen“ auslassen,
+> sonst meldet es „Port 48100 nicht verfügbar“. Pads am Rechner, MIDI und Senden
+> macht das Fenster wie gewohnt.

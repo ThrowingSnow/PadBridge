@@ -1,7 +1,7 @@
 //! PadBridge: game controllers as MIDI, keyboard/mouse and network gamepads.
 //!
 //! `padbridge`                     window
-//! `padbridge --headless --listen` service mode (replaces padbridge-netpad)
+//! `padbridge --headless --listen --receive-only`   service mode (replaces padbridge-netpad)
 
 mod engine;
 mod net;
@@ -9,19 +9,21 @@ mod platform;
 mod ui;
 
 const USAGE: &str = "\
-usage: padbridge [--headless] [--listen]
+usage: padbridge [--headless] [--listen] [--receive-only]
 
-  --headless   no window; runs until stopped (e.g. as a systemd user service)
-  --listen     accept a peer's pads, MIDI and keyboard/mouse regardless of the setting
-  --version    print the version";
+  --headless       no window; runs until stopped (e.g. as a systemd user service)
+  --listen         accept a peer's pads, MIDI and keyboard/mouse regardless of the setting
+  --receive-only   do not read local pads and send nothing (for a service next to the window)
+  --version        print the version";
 
 fn main() {
     let mut headless = false;
-    let mut listen = false;
+    let mut options = engine::Options::default();
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--headless" => headless = true,
-            "--listen" => listen = true,
+            "--listen" => options.listen_forced = true,
+            "--receive-only" => options.receive_only = true,
             "--version" => {
                 println!("padbridge {}", env!("CARGO_PKG_VERSION"));
                 return;
@@ -37,7 +39,7 @@ fn main() {
         }
     }
 
-    let handle = engine::Engine::spawn(listen);
+    let handle = engine::Engine::spawn(options);
     if headless {
         // The engine thread does all the work; virtual devices vanish with the process.
         loop {

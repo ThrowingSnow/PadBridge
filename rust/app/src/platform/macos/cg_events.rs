@@ -9,7 +9,9 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::{CFString, CFStringRef};
 use core_graphics::display::{CGDisplay, CGPoint};
-use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton, EventField, ScrollEventUnit};
+use core_graphics::event::{
+    CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton, EventField, ScrollEventUnit,
+};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use padbridge_core::keymouse::{KeyCode, KmEvent, MouseButton, WireInput};
 
@@ -46,7 +48,12 @@ impl Poster {
                 "Bedienungshilfen-Freigabe fehlt (Systemeinstellungen → Sicherheit → Bedienungshilfen → PadBridge erlauben)",
             ));
         }
-        Ok(Poster { held_buttons: HashSet::new(), held_keys: HashSet::new(), flags: CGEventFlags::empty(), scroll_rest: (0.0, 0.0) })
+        Ok(Poster {
+            held_buttons: HashSet::new(),
+            held_keys: HashSet::new(),
+            flags: CGEventFlags::empty(),
+            scroll_rest: (0.0, 0.0),
+        })
     }
 
     fn source() -> Option<CGEventSource> {

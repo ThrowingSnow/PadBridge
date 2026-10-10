@@ -123,6 +123,17 @@ const RUMBLE_TIMEOUT: Duration = Duration::from_millis(500);
 const SAVE_DELAY: Duration = Duration::from_millis(500);
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(16);
 
+/// How the engine runs, from the command line.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Options {
+    /// Receive from a peer regardless of the `listen` setting.
+    pub listen_forced: bool,
+    /// Only receive (like the old padbridge-netpad): no local pads, no sending.
+    /// For the background service, so a window opened next to it is the only
+    /// one reading the local pads (no doubled MIDI).
+    pub receive_only: bool,
+}
+
 pub struct Engine {
     rx: ChannelRx<Msg>,
     tx: Sender<Msg>,
@@ -143,6 +154,7 @@ pub struct Engine {
     receiver: Option<Receiver>,
     receiver_error: Option<String>,
     listen_forced: bool,
+    receive_only: bool,
     clock: MidiClockTracker,
     clock_status: ClockStatus,
     ring: Ring,
@@ -162,7 +174,8 @@ pub struct Engine {
 
 impl Engine {
     /// Starts the engine thread and returns its handle.
-    pub fn spawn(listen_forced: bool) -> Handle {
+    pub fn spawn(options: Options) -> Handle {
+        let listen_forced = options.listen_forced;
         let (tx, rx) = channel();
         let dir = settings::config_dir();
         let midi: MidiMapping = settings::load(&dir, settings::MIDI_FILE);
@@ -205,6 +218,7 @@ impl Engine {
             receiver: None,
             receiver_error: None,
             listen_forced,
+            receive_only: options.receive_only,
             clock: MidiClockTracker::new(),
             clock_status: ClockStatus::default(),
             ring: Ring::new(),
@@ -244,7 +258,11 @@ impl Engine {
                 self.shared.lock().unwrap().midi_error = Some(e.to_string());
             }
         }
-        platform::start_pads(&self.tx);
+        if self.receive_only {
+            self.log("Nur-Empfangen-Modus: lokale Pads werden nicht gelesen".into());
+        } else {
+            platform::start_pads(&self.tx);
+        }
         self.reconcile_link();
         self.reconcile_receiver();
 
@@ -594,7 +612,7 @@ impl Engine {
     }
 
     fn reconcile_link(&mut self) {
-        let wanted = self.link_wanted();
+        let wanted = self.link_wanted() && !self.receive_only;
         if !wanted {
             if self.link.is_some() {
                 self.close_link();
