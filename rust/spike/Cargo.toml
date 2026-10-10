@@ -1,0 +1,9 @@
+[package]
+name = "padbridge-spike"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+coremidi = "0.9.2"
+eframe = { version = "0.36.2", default-features = false, features = ["glow", "default_fonts"] }
+rusb = { version = "0.9.4", features = ["vendored"] }
