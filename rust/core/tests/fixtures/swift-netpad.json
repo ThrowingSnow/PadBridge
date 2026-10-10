@@ -1,0 +1,12 @@
+{
+  "enabled" : true,
+  "host" : "192.0.2.10",
+  "port" : 48100,
+  "presets" : [
+    {
+      "host" : "192.0.2.10",
+      "name" : "Desktop"
+    }
+  ],
+  "rumble" : false
+}

@@ -1,0 +1,303 @@
+{
+  "bindings" : [
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "axis" : {
+          "_0" : "leftX"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 20,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "axis" : {
+          "_0" : "leftY"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 21,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "axis" : {
+          "_0" : "rightX"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 22,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "axis" : {
+          "_0" : "rightY"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 23,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "axis" : {
+          "_0" : "leftTrigger"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 24,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "axis" : {
+          "_0" : "rightTrigger"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 25,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "toggle",
+      "control" : {
+        "button" : {
+          "_0" : "a"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "note",
+      "number" : 102,
+      "velocity" : 127,
+      "velocitySource" : "rightTrigger"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "b"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 103,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "x"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 104,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "y"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 105,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "leftShoulder"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 106,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "rightShoulder"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 107,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "leftStick"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 108,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "rightStick"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 109,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "back"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 110,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "start"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 111,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "guide"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 112,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "dpadUp"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 113,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "dpadDown"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 114,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "dpadLeft"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 115,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    },
+    {
+      "buttonMode" : "momentary",
+      "control" : {
+        "button" : {
+          "_0" : "dpadRight"
+        }
+      },
+      "enabled" : true,
+      "invert" : false,
+      "kind" : "cc",
+      "number" : 116,
+      "velocity" : 127,
+      "velocitySource" : "fixed"
+    }
+  ],
+  "channel" : 1,
+  "enabled" : true,
+  "stickDeadzone" : 0.12,
+  "target" : "network",
+  "triggerDeadzone" : 0.02
+}

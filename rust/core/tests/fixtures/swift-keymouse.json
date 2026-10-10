@@ -1,0 +1,247 @@
+{
+  "bindings" : [
+    {
+      "action" : {
+        "key" : {
+          "_0" : "enter",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "a"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "escape",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "b"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "space",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "x"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "tab",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "y"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "tab",
+          "modifiers" : [
+            "control",
+            "shift"
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "leftShoulder"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "tab",
+          "modifiers" : [
+            "control"
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "rightShoulder"
+        }
+      }
+    },
+    {
+      "action" : {
+        "none" : {
+
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "leftStick"
+        }
+      }
+    },
+    {
+      "action" : {
+        "mouse" : {
+          "_0" : "middle"
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "rightStick"
+        }
+      }
+    },
+    {
+      "action" : {
+        "none" : {
+
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "back"
+        }
+      }
+    },
+    {
+      "action" : {
+        "none" : {
+
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "start"
+        }
+      }
+    },
+    {
+      "action" : {
+        "none" : {
+
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "guide"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "up",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "dpadUp"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "down",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "dpadDown"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "left",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "dpadLeft"
+        }
+      }
+    },
+    {
+      "action" : {
+        "key" : {
+          "_0" : "right",
+          "modifiers" : [
+
+          ]
+        }
+      },
+      "control" : {
+        "button" : {
+          "_0" : "dpadRight"
+        }
+      }
+    },
+    {
+      "action" : {
+        "mouse" : {
+          "_0" : "right"
+        }
+      },
+      "control" : {
+        "axis" : {
+          "_0" : "leftTrigger"
+        }
+      }
+    },
+    {
+      "action" : {
+        "mouse" : {
+          "_0" : "left"
+        }
+      },
+      "control" : {
+        "axis" : {
+          "_0" : "rightTrigger"
+        }
+      }
+    }
+  ],
+  "curve" : 2,
+  "enabled" : true,
+  "leftStick" : "scroll",
+  "mouseSpeed" : 1400,
+  "rightStick" : "mouse",
+  "scrollSpeed" : 12,
+  "stickDeadzone" : 0.15,
+  "target" : "network"
+}

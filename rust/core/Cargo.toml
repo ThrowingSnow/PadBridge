@@ -1,0 +1,13 @@
+[package]
+name = "padbridge-core"
+description = "Platform-independent PadBridge core: controls, mappings, clock, LED ring, network protocol, settings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hmac = "0.12"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+getrandom = { version = "0.2", features = ["std"] }
