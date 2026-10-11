@@ -4,6 +4,33 @@ Versions follow [Semantic Versioning](https://semver.org). The Mac app and
 `linux/padbridge-netpad` share one version number; the network protocol is
 versioned separately by its magic (`PBG1` = protocol v1).
 
+## [0.4.0] - 2026-10-11
+
+The Rust rewrite (`rust/`): one code base for Linux and macOS 10.13+.
+The Swift app and `padbridge-netpad` keep working and interoperate (same
+protocol v1, same settings files), but are now superseded.
+
+### Added
+- `padbridge` app (egui, OpenGL) for Linux and macOS 10.13+ (also Macs
+  without Metal, e.g. a 2010 iMac). Same tabs as the Swift app.
+- Every installation can **send and receive** at the same time: pads, MIDI
+  and keyboard/mouse in both directions. A Mac can now receive MIDI and
+  keyboard/mouse; a Linux host additionally creates virtual 360 pads.
+- Linux: pads at the Linux machine itself (evdev, any pad the kernel knows,
+  hotplug), rumble, xpad LED ring (udev rule in DOC.md), ALSA port with
+  automatic VirMIDI link, local keyboard/mouse via uinput.
+- macOS: pads via libusb (no kext), CoreMIDI ports, CGEvent keyboard/mouse;
+  `rust/scripts/bundle-macos.sh` builds PadBridge.app.
+- Service mode `padbridge --headless --listen --receive-only` with systemd
+  unit; replaces `padbridge-netpad` (see DOC.md section 6).
+- `padbridge-core` crate: all Swift tests ported, Swift settings files as
+  fixtures, shared protocol test vector.
+
+### Changed
+- LED ring "Clock: Takt" goes round clockwise (1, 2, 4, 3), one LED per bar.
+- Receiver replay protection is tracked per sender, so several machines can
+  send to one receiver.
+
 ## [0.3.0] - 2026-10-10
 
 ### Added
