@@ -8,6 +8,7 @@
 
 pub mod controls;
 pub mod device;
+pub mod ds4;
 pub mod key;
 pub mod keymouse;
 pub mod midi;

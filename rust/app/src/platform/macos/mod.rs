@@ -1,5 +1,5 @@
-//! macOS (10.13+): pads via libusb (no kernel extension; the 360 pad is not a
-//! HID device, so nothing else claims it), MIDI via CoreMIDI virtual ports,
+//! macOS (10.13+): Xbox 360 pads via libusb (no kernel extension; the 360 pad
+//! is not a HID device, so nothing else claims it), DualShock 4 via HID, MIDI via CoreMIDI virtual ports,
 //! keyboard/mouse via CGEvent (needs the Accessibility permission).
 //!
 //! A virtual game pad for a peer is not possible on macOS without a driver,
@@ -7,6 +7,7 @@
 
 mod cg_events;
 mod coremidi_port;
+mod hid_pads;
 mod usb_pads;
 
 use std::io;
@@ -15,6 +16,7 @@ use super::{EventSink, KeyMouseOut, MidiPort, VirtualKeyMouse, VirtualPad};
 
 pub fn start_pads(events: &EventSink) {
     usb_pads::start(super::sink(events));
+    hid_pads::start(super::sink(events));
 }
 
 pub fn open_midi(events: &EventSink) -> io::Result<Box<dyn MidiPort>> {
