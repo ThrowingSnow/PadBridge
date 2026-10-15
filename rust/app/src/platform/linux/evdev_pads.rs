@@ -16,7 +16,9 @@ use evdev::{
     AbsoluteAxisType as Abs, Device, FFEffect, FFEffectData, FFEffectKind, FFEffectType, FFReplay, FFTrigger,
     InputEventKind, Key,
 };
-use padbridge_core::{xbox360, Capabilities, ControllerInfo, ControllerState, PadAxis, PadButton, PlayerIndicator};
+use padbridge_core::{
+    ds4, xbox360, Capabilities, ControllerInfo, ControllerState, PadAxis, PadButton, PlayerIndicator,
+};
 
 use crate::platform::{Event, PadOutput};
 
@@ -175,7 +177,7 @@ fn connect(node: &Path) -> io::Result<(ControllerInfo, LinuxPad, Reader, Control
     }
 
     let rumble = output.supported_ff().is_some_and(|ff| ff.contains(FFEffectType::FF_RUMBLE));
-    let led = led_path(node);
+    let led = find_led(node);
     let id = node.display().to_string();
     let input_id = reader.input_id();
     let info = ControllerInfo {
@@ -241,23 +243,68 @@ fn apply_abs(state: &mut ControllerState, ranges: &[Range], axis: Abs, value: i3
     }
 }
 
-/// xpad registers the ring as an LED class device ("xpad0") on the USB
-/// device, a few levels above the input node; writing a pattern number
-/// (0..=15) to its `brightness` sets it.
-fn led_path(node: &Path) -> Option<PathBuf> {
+/// The pad's lights, found as LED class devices on the USB/HID device a few
+/// levels above the input node.
+enum Led {
+    /// xpad ring ("xpad0"): a pattern number (0..=15) written to `brightness`.
+    XpadRing(PathBuf),
+    /// DualShock 4 light bar, hid-playstation: one multicolour LED
+    /// ("…:rgb:indicator") taking "r g b" in `multi_intensity`.
+    RgbIndicator(PathBuf),
+    /// DualShock 4 light bar, hid-sony: separate red/green/blue LEDs.
+    RgbSeparate([PathBuf; 3]),
+}
+
+fn find_led(node: &Path) -> Option<Led> {
     sysfs_dir(node)?.ancestors().take(6).find_map(|dir| {
-        fs::read_dir(dir.join("leds"))
+        let names: Vec<(String, PathBuf)> = fs::read_dir(dir.join("leds"))
             .ok()?
             .filter_map(|e| e.ok())
-            .find(|e| e.file_name().to_string_lossy().starts_with("xpad"))
-            .map(|e| e.path().join("brightness"))
+            .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
+            .collect();
+        let find = |pred: &dyn Fn(&str) -> bool| names.iter().find(|(n, _)| pred(n)).map(|(_, p)| p.clone());
+        if let Some(p) = find(&|n| n.starts_with("xpad")) {
+            return Some(Led::XpadRing(p.join("brightness")));
+        }
+        if let Some(p) = find(&|n| n.ends_with(":rgb:indicator")) {
+            return Some(Led::RgbIndicator(p));
+        }
+        let [r, g, b] = [":red", ":green", ":blue"].map(|c| find(&|n| n.ends_with(c)));
+        Some(Led::RgbSeparate([r?, g?, b?]))
     })
+}
+
+impl Led {
+    fn path(&self) -> &Path {
+        match self {
+            Led::XpadRing(p) | Led::RgbIndicator(p) => p,
+            Led::RgbSeparate([r, _, _]) => r,
+        }
+    }
+
+    fn set(&self, indicator: PlayerIndicator) -> io::Result<()> {
+        match self {
+            Led::XpadRing(p) => fs::write(p, xbox360::led_report(indicator)[2].to_string()),
+            Led::RgbIndicator(dir) => {
+                let [r, g, b] = ds4::LightBar::from_indicator(indicator).rgb;
+                fs::write(dir.join("multi_intensity"), format!("{r} {g} {b}"))?;
+                fs::write(dir.join("brightness"), "255")
+            }
+            Led::RgbSeparate(dirs) => {
+                // The kernel cannot blink these; a steady colour is the best we can do.
+                for (dir, v) in dirs.iter().zip(ds4::LightBar::from_indicator(indicator).rgb) {
+                    fs::write(dir.join("brightness"), v.to_string())?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 struct LinuxPad {
     device: Device,
     effect: Option<FFEffect>,
-    led: Option<PathBuf>,
+    led: Option<Led>,
     led_warned: bool,
 }
 
@@ -292,14 +339,13 @@ impl PadOutput for LinuxPad {
     }
 
     fn set_indicator(&mut self, indicator: PlayerIndicator) {
-        let Some(path) = &self.led else { return };
-        let pattern = xbox360::led_report(indicator)[2];
-        if let Err(e) = fs::write(path, pattern.to_string()) {
+        let Some(led) = &self.led else { return };
+        if let Err(e) = led.set(indicator) {
             if !self.led_warned {
                 self.led_warned = true;
                 eprintln!(
-                    "padbridge: LED-Ring: {} nicht beschreibbar ({e}); siehe DOC.md (udev-Regel)",
-                    path.display()
+                    "padbridge: LED: {} nicht beschreibbar ({e}); siehe DOC.md (udev-Regel)",
+                    led.path().display()
                 );
             }
         }
