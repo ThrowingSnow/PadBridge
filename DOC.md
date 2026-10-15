@@ -280,7 +280,7 @@ Options = Start, PS = Guide). Die Lightbar ersetzt den LED-Ring: P1 blau,
 P2 rot, P3 grün, P4 pink. Damit die App sie setzen darf:
 
 ```sh
-echo 'ACTION=="add", SUBSYSTEM=="leds", KERNEL=="*054C:*|*:rgb:indicator", RUN+="/bin/sh -c '"'"'chgrp input /sys%p/brightness /sys%p/multi_intensity; chmod 0664 /sys%p/brightness /sys%p/multi_intensity'"'"'"' \
+echo 'ACTION=="add", SUBSYSTEM=="leds", KERNEL=="*054C:*|*:rgb:indicator", RUN+="/bin/chgrp input /sys%p/brightness", RUN+="/bin/chmod 0664 /sys%p/brightness", RUN+="/bin/chgrp input /sys%p/multi_intensity", RUN+="/bin/chmod 0664 /sys%p/multi_intensity"' \
   | sudo tee /etc/udev/rules.d/72-padbridge-ds4-led.rules
 sudo udevadm control --reload
 ```
