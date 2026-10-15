@@ -315,9 +315,14 @@ impl Loop {
         }
     }
 
+    /// Shows the error in the status and logs it, once while it stays the same
+    /// (a peer's pad packets arrive 60 times a second).
     fn set_error(&self, error: String) {
-        self.log(error.clone());
-        self.status.lock().unwrap().error = Some(error);
+        let mut status = self.status.lock().unwrap();
+        if status.error.as_ref() != Some(&error) {
+            self.log(error.clone());
+            status.error = Some(error);
+        }
     }
 
     fn publish(&self) {
