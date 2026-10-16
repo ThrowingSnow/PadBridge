@@ -1,74 +1,122 @@
 # PadBridge
 
-Gamepads on macOS without kernel extensions. Reads a wired Xbox 360 controller
-directly over USB (IOUSBHost, user space) and routes it to:
+Turn a game pad into a **MIDI controller**, a **keyboard/mouse**, or a
+**network game pad** for another computer. Runs on **Linux** and on
+**macOS 10.13 High Sierra and newer**, also on old Macs without Metal (it
+runs on a 2010 iMac). No kernel extensions and no drivers on the Mac.
 
-- **MIDI**: virtual CoreMIDI port "PadBridge", every control mapped to a CC/note;
-  MIDI clock in drives the LED ring (beat blink, bar 1-4 -> LED 1-4)
-- **Network gamepad**: signed UDP to `linux/padbridge-netpad`, which creates a real
-  uinput Xbox 360 pad on Linux, e.g. for Wine/Proton games streamed with Sunshine/Moonlight
-- **Keyboard/mouse** emulation on the Mac (CGEvent) or on the Linux host (uinput)
-- **Rumble** from games on the Linux host back to the pad
+Supported pads:
 
-**Setup on a new machine: see [DOC.md](DOC.md)** (step by step, German).
+| Pad | macOS | Linux |
+|---|---|---|
+| Xbox 360 wired (and licensed clones) | USB, rumble, LED ring | USB, rumble, LED ring |
+| DualShock 4 (PS4) | USB and Bluetooth, rumble, light bar | USB and Bluetooth, rumble, light bar |
+| Any other pad the Linux kernel knows | – | buttons, sticks, rumble |
 
-A cross-platform rewrite in Rust (Linux and macOS 10.13+, every machine can
-send and receive) is under way in [`rust/`](rust/README.md).
+## What it does
 
-Why: the old 360Controller kext is blocked on macOS 14 (IOHIDFamily kexts are
-classified "Unsupported"), and Moonlight cannot see the pad because it is not a
-HID device.
-
-## Architecture
+- **MIDI**: a virtual MIDI port "PadBridge". Every button, stick axis and
+  trigger sends a CC or note of your choice: momentary or toggle, invert,
+  deadzones, velocity fixed or from a trigger. Map it by clicking the
+  controller picture: the outline of the pad in your hand, with a number
+  field on every control that lights up when you press it.
+- **MIDI clock in**: send clock to "PadBridge" and the LED ring (or the PS4
+  light bar) blinks on the beat or steps through the bars.
+- **Keyboard/mouse**: buttons become keys, a stick becomes the mouse.
+- **Network**: send the pad, MIDI and keyboard/mouse to another machine over
+  UDP (signed with HMAC-SHA256). On Linux the receiver creates a virtual Xbox
+  360 pad that Steam, SDL, Wine/Proton and Sunshine/Moonlight recognise
+  without any setup. Rumble from the game goes back to the pad in your hand.
+- **Both directions at once**: every installation can send and receive. Play
+  on the Linux box with a pad on the Mac, or play Bitwig on Linux with
+  MIDI-learn from a pad on the laptop.
 
 ```
-Backends (input)            Canonical state          Mapping              Outputs
-USBBackend  ─┐                                                            ┌─► MIDI
-  Xbox360Device              PadButton + PadAxis      profiles, layers,    ├─► Keyboard/Mouse
-HID (later) ─┼──► ControllerManager ──► events ──►     curves, deadzones ─┼─► Net gamepad (UDP)
-GCController (later) ─┘      (+ rumble/LED back)                          └─► OSC
+ Laptop / Mac                                  Linux desktop
+ ┌──────────────────────┐   UDP 48100,         ┌─────────────────────────────┐
+ │ pad (USB/Bluetooth)  │   HMAC-signed        │ virtual Xbox 360 pad        │
+ │ MIDI port "PadBridge"│ ───────────────────► │ ALSA MIDI port "PadBridge"  │
+ │ keyboard/mouse       │ ◄─────────────────── │ virtual keyboard/mouse      │
+ │ LED ring, rumble     │  rumble, MIDI clock  │ (games, Bitwig, Moonlight)  │
+ └──────────────────────┘                      └─────────────────────────────┘
 ```
 
-- `PadCore`: device-agnostic model (`PadButton`, `PadAxis`, `ControllerState`,
-  `ControllerDevice`, `ControllerBackend`, `ControllerManager`). Nothing in here
-  knows about USB or a specific pad.
-- `PadMIDI`: mapping (`MIDIMapper`, pure), clock following (`MIDIClockTracker`, pure),
-  CoreMIDI port (`MIDIEndpoint`), glue (`MIDIBridge`). Settings: `~/Library/Application Support/PadBridge/`.
-- `PadNet`: net gamepad protocol (`NetPadProtocol`, shares a test vector with the
-  Rust side), key handling, UDP sender with keepalive and ping.
-- `PadUSB`: raw USB backend. `Xbox360Protocol` is pure byte parsing (unit tested);
-  `Xbox360Device` does the IOUSBHost I/O; `USBBackend` handles hotplug.
-- **Adding a controller family** means adding a backend (or a protocol + device
-  class inside `PadUSB`) that emits `ControllerState`. Mapping and outputs do not change.
+On macOS the receiver accepts MIDI and keyboard/mouse; a virtual game pad
+would need a driver there.
 
-Units: sticks -1…+1 with **up/right positive**, triggers 0…1.
+## Getting started
 
-## Build & run
-
-Needs only the Xcode Command Line Tools (Swift 6).
+You need [Rust](https://rustup.rs). Then:
 
 ```sh
-swift build
-swift test
-swift run padbridge-cli            # terminal live monitor (--rumble: buzz on connect)
-swift run PadBridgeApp             # SwiftUI live monitor + menu bar icon
-scripts/bundle.sh                  # build/PadBridge.app
+git clone https://github.com/ThrowingSnow/PadBridge.git
+cd PadBridge/rust
 ```
+
+**Linux** (needs the ALSA headers: `alsa-lib` on Arch, `libasound2-dev` on
+Debian/Ubuntu):
+
+```sh
+cargo build --release -p padbridge
+install -Dm755 target/release/padbridge ~/.local/bin/padbridge
+padbridge
+```
+
+Add yourself to the `input` group and allow `/dev/uinput`; the udev rules for
+the LED ring and the light bar are in [DOC.md](DOC.md).
+
+**macOS** (Xcode Command Line Tools are enough):
+
+```sh
+scripts/bundle-macos.sh          # builds target/PadBridge.app
+open target/PadBridge.app
+```
+
+The app is ad-hoc signed: on the first start, right-click it and choose
+"Open". For keyboard/mouse output, allow PadBridge under System Settings →
+Privacy & Security → Accessibility.
+
+**Network**: on both machines open the "Netzwerk" tab. Both sides need the
+same key: it is created on the first start; copy it with "Schlüssel kopieren"
+and put it into the key file on the other machine (the tab shows the path).
+Enter the other machine's address on the sending side and switch on
+receiving on the other. Only use it in your LAN or over a VPN such as Tailscale: packets are
+signed, not encrypted.
+
+**Headless service on Linux** (receives only, no window):
+
+```sh
+cp app/padbridge.service ~/.config/systemd/user/
+systemctl --user enable --now padbridge
+```
+
+Step-by-step setup, troubleshooting and the udev rules are in
+**[DOC.md](DOC.md)** (German).
+
+The user interface is in German for now.
+
+## Project layout
+
+```
+rust/      the app (Linux and macOS 10.13+), see rust/README.md
+  core/    pads, mapping, MIDI clock, LED logic, network protocol (no OS access, unit tested)
+  app/     engine + egui window; platform/linux and platform/macos backends
+Sources/   the original Swift app (macOS 13+, Xbox 360 only), superseded by rust/
+linux/     padbridge-netpad, the original Linux receiver, superseded by rust/
+```
+
+The Swift app and `padbridge-netpad` still work and speak the same protocol,
+so old and new parts understand each other.
 
 ## Roadmap
 
-1. ✅ Core model, USB backend (Xbox 360 wired + clones), live monitor
-2. ✅ MIDI output: per-control CC/note table, channel, deadzones, momentary/toggle, invert;
-   MIDI clock in -> LED ring sync; random LED mode
-   - later: 14-bit, relative mode, shift layer, rumble from MIDI
-3. ✅ Network gamepad: HMAC-signed UDP protocol + Rust uinput daemon, latency display
-   - MIDI over the same link: ALSA port "PadBridge" on the Linux host, clock back to the ring;
-     MIDI tab switches the target between Mac and Linux host
-   - ✅ rumble from the game back to the pad, Bitwig on Linux via snd-virmidi
-   - ✅ host presets (name + address) editable in the app
-4. ✅ Keyboard/mouse output (Mac or Linux host, alongside the gamepad)
-5. Profiles (Guide + D-Pad to switch, shown on the LED ring)
-6. More backends: IOHID, GameController.framework
+- Forward real MIDI controllers over the network (per device, both
+  directions, SysEx)
+- The receiving side shows the pad you actually hold (e.g. a PS4 pad instead
+  of the Xbox 360 stand-in)
+- Profiles, switched from the pad
+
+Changes per version: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
