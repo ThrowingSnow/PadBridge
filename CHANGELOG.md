@@ -4,6 +4,20 @@ Versions follow [Semantic Versioning](https://semver.org). The Mac app and
 `linux/padbridge-netpad` share one version number; the network protocol is
 versioned separately by its magic (`PBG1` = protocol v1).
 
+## [0.4.1] - 2026-10-16
+
+### Added
+- DualShock 4 (054c:05c4, 09cc, 0ba0) on macOS via HID, USB and Bluetooth:
+  buttons, sticks, triggers, rumble, light bar. The light bar shows the
+  player indicator (P1 blue, P2 red, P3 green, P4 pink; blinking and
+  rotating modes for the clock).
+- Linux: DualShock 4 light bar via sysfs (hid-playstation and hid-sony),
+  udev rule in DOC.md.
+
+### Fixed
+- Receiver logs an error only when it changes (no log flood on macOS, which
+  cannot create a virtual pad).
+
 ## [0.4.0] - 2026-10-11
 
 The Rust rewrite (`rust/`): one code base for Linux and macOS 10.13+.
