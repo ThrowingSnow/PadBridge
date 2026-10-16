@@ -1,8 +1,7 @@
 # PadBridge (Rust)
 
 One code base for Linux and macOS (10.13+), replacing the Swift app and the
-`padbridge-netpad` daemon step by step. Setup for users: [../DOC.md](../DOC.md),
-section 6.
+`padbridge-netpad` daemon. Setup for users: [../DOC.md](../DOC.md) (German).
 
 ```
 core/    padbridge-core: controls, state, MIDI and keyboard/mouse mapping, MIDI
@@ -14,8 +13,10 @@ app/     padbridge: engine thread + egui UI (glow/OpenGL, so it runs on Macs
   engine.rs       owns devices, mappers, clock/ring, links; UI reads snapshots
   net/sender.rs   sends this machine's pads/MIDI/keyboard to a peer
   net/receiver.rs accepts a peer's packets, drives virtual devices (poll loop)
-  platform/linux  evdev pads (hotplug, FF rumble, xpad LED), uinput, ALSA
-  platform/macos  libusb pads (rumble, LED), CoreMIDI ports, CGEvent keyboard/mouse
+  platform/linux  evdev pads (hotplug, FF rumble, xpad LED, DS4 light bar), uinput, ALSA
+  platform/macos  libusb Xbox 360 pads, hidapi DualShock 4, CoreMIDI ports,
+                  CGEvent keyboard/mouse
+  ui/pad_map.rs   MIDI tab picture view (pad outline with a field per control)
   platform/stub   placeholder for other systems
 spike/   stage-0 feasibility test for macOS 10.13 (egui/glow + libusb + CoreMIDI)
 ```
@@ -39,5 +40,7 @@ MACOSX_DEPLOYMENT_TARGET=10.13 cargo build --release -p padbridge   # macOS
 - [x] Stage 3: macOS backend (libusb pad, CoreMIDI, CGEvent), app bundle
       (`scripts/bundle-macos.sh`); receiver on macOS: MIDI + keyboard/mouse
       (a virtual game pad needs a driver there)
+- [x] DualShock 4 (macOS via HID, USB and Bluetooth; Linux via evdev + sysfs LEDs)
+- [x] MIDI tab picture view
 - [ ] Stage 4: forward MIDI controllers (per device, both directions), SysEx
 - [ ] Retire the Swift app and padbridge-netpad
