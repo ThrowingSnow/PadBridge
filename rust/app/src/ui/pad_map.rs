@@ -407,8 +407,8 @@ fn draw_body(painter: &egui::Painter, look: Look, at: &impl Fn((f32, f32)) -> Po
             blob(0.0, -20.0, 205.0, 100.0, 0.0);
             blob(-150.0, 60.0, 80.0, 115.0, 0.45);
             blob(150.0, 60.0, 80.0, 115.0, -0.45);
-            blob(-140.0, -95.0, 85.0, 40.0, 0.0);
-            blob(140.0, -95.0, 85.0, 40.0, 0.0);
+            blob(-130.0, -88.0, 78.0, 30.0, 0.12);
+            blob(130.0, -88.0, 78.0, 30.0, -0.12);
         }
         Look::Ds4 => {
             let r = Rect::from_center_size(at((0.0, -40.0)), Vec2::new(440.0, 150.0) * s);
@@ -522,8 +522,13 @@ fn draw_part(
             let c = r.center();
             painter.circle_filled(c, r.width() / 2.0, if pressed { on } else { idle });
             painter.circle_stroke(c, r.width() / 2.0, edge);
-            let name = if look == Look::Ds4 { "PS" } else { "X" };
-            label(name, if pressed { Color32::WHITE } else { text });
+            if look == Look::Ds4 {
+                label("PS", if pressed { Color32::WHITE } else { text });
+            } else {
+                // The Xbox guide button: a ring, not a letter (X is a face button).
+                let mark = if pressed { Color32::WHITE } else { v.weak_text_color() };
+                painter.circle_stroke(c, r.width() * 0.25, Stroke::new(2.0, mark));
+            }
         }
     }
 }

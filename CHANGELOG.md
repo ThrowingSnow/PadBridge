@@ -4,6 +4,14 @@ Versions follow [Semantic Versioning](https://semver.org). The Mac app and
 `linux/padbridge-netpad` share one version number; the network protocol is
 versioned separately by its magic (`PBG1` = protocol v1).
 
+## [Unreleased]
+
+### Added
+- MIDI tab, picture view: outline of the pad in hand (Xbox or DualShock 4,
+  automatic or chosen) with a CC/note field next to every control, live
+  highlighting, and a popup with all settings per control. The table
+  remains as the second view.
+
 ## [0.4.1] - 2026-10-16
 
 ### Added
