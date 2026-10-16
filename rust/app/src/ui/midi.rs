@@ -2,6 +2,7 @@ use eframe::egui;
 use padbridge_core::midi::{ButtonMode, MidiMapping, MidiMessageKind, MidiTarget, VelocitySource};
 use padbridge_core::Control;
 
+use super::pad_map::{self, Look};
 use super::{hint, status, App, GREEN, GREY, ORANGE};
 
 impl App {
@@ -47,10 +48,42 @@ impl App {
             }
         });
         ui.separator();
-        changed |= self.binding_table(ui);
+        ui.horizontal(|ui| {
+            ui.label("Ansicht");
+            ui.selectable_value(&mut self.midi_picture, true, "Bild");
+            ui.selectable_value(&mut self.midi_picture, false, "Tabelle");
+        });
+        if self.midi_picture {
+            changed |= self.binding_picture(ui);
+        } else {
+            changed |= self.binding_table(ui);
+        }
         if changed {
             self.set_midi();
         }
+    }
+
+    fn binding_picture(&mut self, ui: &mut egui::Ui) -> bool {
+        let device =
+            self.snap.devices.iter().find(|d| Some(&d.info.id) == self.selected.as_ref()).or(self.snap.devices.first());
+        let auto = device.map_or(Look::Xbox, |d| Look::of_vendor(d.info.vendor_id));
+        let look = self.pad_look.unwrap_or(auto);
+        ui.horizontal(|ui| {
+            ui.label("Form");
+            ui.selectable_value(&mut self.pad_look, None, format!("Automatisch ({})", auto.name()));
+            for l in [Look::Xbox, Look::Ds4] {
+                ui.selectable_value(&mut self.pad_look, Some(l), l.name());
+            }
+            ui.add_space(16.0);
+            hint(ui, "Auf eine Taste klicken für Typ, Modus, Velocity und Aktiv.");
+        });
+        let state = device.map(|d| d.state).unwrap_or_default();
+        let live = device.map(|d| d.midi_values.clone()).unwrap_or_default();
+        let changed = pad_map::show(ui, look, &mut self.midi, &state, &live);
+        if !self.midi.conflicts().is_empty() {
+            hint(ui, "Rot: mehrere Controls senden dieselbe Nachricht.");
+        }
+        changed
     }
 
     fn binding_table(&mut self, ui: &mut egui::Ui) -> bool {
@@ -133,21 +166,21 @@ impl App {
     }
 }
 
-fn kind_name(k: MidiMessageKind) -> &'static str {
+pub(super) fn kind_name(k: MidiMessageKind) -> &'static str {
     match k {
         MidiMessageKind::Cc => "CC",
         MidiMessageKind::Note => "Note",
     }
 }
 
-fn mode_name(m: ButtonMode) -> &'static str {
+pub(super) fn mode_name(m: ButtonMode) -> &'static str {
     match m {
         ButtonMode::Momentary => "Momentary",
         ButtonMode::Toggle => "Toggle",
     }
 }
 
-fn velocity_name(v: VelocitySource) -> &'static str {
+pub(super) fn velocity_name(v: VelocitySource) -> &'static str {
     match v {
         VelocitySource::Fixed => "Fix",
         VelocitySource::LeftTrigger => "LT",

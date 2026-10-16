@@ -6,6 +6,7 @@ mod keymouse;
 mod midi;
 mod monitor;
 mod network;
+mod pad_map;
 
 use std::time::Duration;
 
@@ -35,6 +36,10 @@ pub struct App {
     rumble: (f32, f32),
     preset_name: String,
     preset_open: bool,
+    /// MIDI tab: pad picture (true) or table.
+    midi_picture: bool,
+    /// MIDI tab picture: forced outline, None follows the selected pad.
+    pad_look: Option<pad_map::Look>,
 }
 
 pub fn run(handle: Handle) -> eframe::Result {
@@ -50,6 +55,8 @@ pub fn run(handle: Handle) -> eframe::Result {
         rumble: (0.0, 0.0),
         preset_name: String::new(),
         preset_open: false,
+        midi_picture: true,
+        pad_look: None,
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
