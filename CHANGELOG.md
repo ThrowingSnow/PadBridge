@@ -4,13 +4,17 @@ Versions follow [Semantic Versioning](https://semver.org). The Mac app and
 `linux/padbridge-netpad` share one version number; the network protocol is
 versioned separately by its magic (`PBG1` = protocol v1).
 
-## [Unreleased]
+## [0.4.2] - 2026-10-16
 
 ### Added
 - MIDI tab, picture view: outline of the pad in hand (Xbox or DualShock 4,
   automatic or chosen) with a CC/note field next to every control, live
   highlighting, and a popup with all settings per control. The table
   remains as the second view.
+
+### Changed
+- README and DOC.md rewritten for the Rust app (setup on Mac and Linux,
+  DualShock 4, service mode, troubleshooting).
 
 ## [0.4.1] - 2026-10-16
 
