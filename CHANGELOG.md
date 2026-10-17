@@ -17,6 +17,15 @@ versioned separately by its magic (`PBG1` = protocol v1).
 - Device LEDs from the mapping: colour per control on the Launch Control XL
   (fixed, brightness, centre-bright for bipolar knobs, or a green-yellow-red
   meter), on/off on the MIDImix; toggles light up. Saved in `surfaces.json`.
+- Elektron Digitakt II view: the screen follows the page and track of the
+  last parameter turned (SRC, FLTR, AMP, FX), encoders A-H and the track
+  level move along, trig keys light per track (and per key pressed, via the
+  auto channel), muted tracks are marked.
+
+### Fixed
+- macOS: MIDI devices plugged in or out while the app runs now appear and
+  disappear (the device list follows CoreMIDI notifications); the tab
+  switches to a device that was just plugged in.
 
 ## [0.4.2] - 2026-10-16
 

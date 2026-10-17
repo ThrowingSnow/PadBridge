@@ -10,6 +10,7 @@ use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontId, Id, Popup, PopupCloseBehavior, Pos2, Rect, Sense, Shape, Stroke,
     StrokeKind, Vec2,
 };
+use padbridge_core::midi::digitakt::{self, Page};
 use padbridge_core::midi::models::{Ctl, CtlKind, Model};
 use padbridge_core::midi::surface::{
     meter_colour, DeviceMapping, LedColour, LedMode, SurfaceBinding, SurfaceKey, SurfaceKind, SurfaceState,
@@ -25,6 +26,13 @@ const FLASH: Duration = Duration::from_millis(400);
 impl App {
     pub(super) fn surfaces_tab(&mut self, ui: &mut egui::Ui) {
         let inputs = self.snap.midi_inputs.clone();
+        // A device plugged in while the app runs is shown right away.
+        if !self.surfaces_seen.is_empty() {
+            if let Some(new) = inputs.iter().find(|i| !self.surfaces_seen.contains(&i.name)) {
+                self.surface = Some(new.name.clone());
+            }
+        }
+        self.surfaces_seen = inputs.iter().map(|i| i.name.clone()).collect();
         if self.surface.as_ref().is_none_or(|n| !inputs.iter().any(|i| &i.name == n)) {
             // Prefer a known surface over e.g. the IAC bus.
             self.surface = inputs
@@ -87,14 +95,15 @@ impl App {
 
         // Lists beside the drawing when there is room, else below it.
         const SIDE: f32 = 330.0;
-        let beside = model.is_some() && ui.available_width() >= 560.0 + SIDE;
-        if let Some(model) = model {
+        let drawn = model.is_some() || digitakt::is_digitakt(&input.name);
+        let beside = drawn && ui.available_width() >= 560.0 + SIDE;
+        if drawn {
             if beside {
                 ui.horizontal_top(|ui| {
                     let width = ui.available_width() - SIDE - 16.0;
                     let height = ui
                         .allocate_ui(Vec2::new(width, 0.0), |ui| {
-                            changed |= surface_view(ui, model, input, mapping);
+                            changed |= draw_device(ui, model, input, mapping);
                         })
                         .response
                         .rect
@@ -106,7 +115,7 @@ impl App {
                     });
                 });
             } else {
-                changed |= surface_view(ui, model, input, mapping);
+                changed |= draw_device(ui, model, input, mapping);
                 ui.add_space(12.0);
             }
         }
@@ -120,6 +129,16 @@ impl App {
                 cols[1].strong("Letzte Meldungen");
                 message_log(&mut cols[1], input, 220.0);
             });
+        }
+    }
+}
+
+fn draw_device(ui: &mut egui::Ui, model: Option<Model>, input: &MidiInputView, mapping: &mut DeviceMapping) -> bool {
+    match model {
+        Some(m) => surface_view(ui, m, input, mapping),
+        None => {
+            digitakt_view(ui, input);
+            false
         }
     }
 }
@@ -535,4 +554,123 @@ fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
     Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
+}
+
+// MARK: Digitakt II
+
+/// Page and track (channel) of the parameter that changed last.
+fn digitakt_focus(input: &MidiInputView) -> (Page, u8, Option<SurfaceKey>) {
+    input
+        .changed
+        .iter()
+        .filter(|(k, _)| k.kind == SurfaceKind::Cc)
+        .filter_map(|(k, t)| match digitakt::param(k.number) {
+            Some((page, Some(_), _)) => Some((t, page, k.channel, *k)),
+            _ => None,
+        })
+        .max_by_key(|(t, ..)| **t)
+        .map_or((Page::Fltr, 0, None), |(_, page, ch, k)| (page, ch, Some(k)))
+}
+
+/// Front panel after the real one: the screen shows the page of the last
+/// parameter turned, the encoders follow it, trig keys light per track.
+fn digitakt_view(ui: &mut egui::Ui, input: &MidiInputView) {
+    let body = Vec2::new(660.0, 370.0);
+    let s = (ui.available_width() / body.x).clamp(0.6, 1.5);
+    let (rect, _) = ui.allocate_exact_size(body * s, Sense::hover());
+    let painter = ui.painter_at(rect);
+    let d = Painter { p: &painter, origin: rect.min, s };
+    let st = &input.state;
+    let (page, ch, last) = digitakt_focus(input);
+    let value = |cc: u8| st.get(SurfaceKey::cc(ch, cc)).map(|v| v.value);
+
+    painter.rect_filled(rect, CornerRadius::same((14.0 * s) as u8), Color32::from_gray(26));
+    painter.rect_stroke(rect, CornerRadius::same((14.0 * s) as u8), Stroke::new(1.0, Color32::from_gray(70)), StrokeKind::Inside);
+    let label = Color32::from_gray(150);
+
+    // Level encoder: track level of the shown track.
+    let level_key = SurfaceKey::cc(ch, digitakt::TRACK_LEVEL);
+    let level = Rect::from_center_size(d.at(110.0, 80.0), Vec2::splat(44.0 * s));
+    let look = Look { flash: flashing(input, level_key), binding: None, toggled: false, hovered: false };
+    knob(&d, level, st, level_key, &look);
+    painter.text(d.at(110.0, 124.0), Align2::CENTER_CENTER, "LEVEL", d.font(8.0), label);
+
+    // Screen.
+    let screen = Rect::from_min_max(d.at(170.0, 28.0), d.at(420.0, 172.0));
+    let ink = Color32::from_rgb(220, 225, 210);
+    painter.rect_filled(screen, CornerRadius::same((4.0 * s) as u8), Color32::from_rgb(12, 14, 12));
+    painter.rect_stroke(screen, CornerRadius::same((4.0 * s) as u8), Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    let muted = value(digitakt::TRACK_MUTE).is_some_and(|v| v > 0);
+    let head = format!("SPUR {}  ·  {}{}", ch + 1, page.name(), if muted { "  ·  MUTE" } else { "" });
+    painter.text(d.at(182.0, 44.0), Align2::LEFT_CENTER, head, d.font(10.0), ink);
+    for (i, enc) in page.encoders().iter().enumerate() {
+        let (col, row) = (i % 4, i / 4);
+        let c = d.at(203.0 + col as f32 * 62.0, 82.0 + row as f32 * 52.0);
+        let Some((cc, name)) = enc else {
+            painter.text(c, Align2::CENTER_CENTER, "–", d.font(9.0), Color32::from_gray(70));
+            continue;
+        };
+        let hot = last.is_some_and(|k| k.number == *cc);
+        let colour = if hot { ORANGE } else { ink };
+        painter.text(c - Vec2::new(0.0, 9.0 * s), Align2::CENTER_CENTER, *name, d.font(8.0), colour);
+        let text = value(*cc).map_or("–".into(), |v| v.to_string());
+        painter.text(c + Vec2::new(0.0, 8.0 * s), Align2::CENTER_CENTER, text, d.font(11.0), colour);
+    }
+
+    // Data encoders A-H, two rows of four.
+    for (i, enc) in page.encoders().iter().enumerate() {
+        let (col, row) = (i % 4, i / 4);
+        let at = (470.0 + col as f32 * 52.0, 52.0 + row as f32 * 70.0);
+        let r = Rect::from_center_size(d.at(at.0, at.1), Vec2::splat(38.0 * s));
+        match enc {
+            Some((cc, _)) => {
+                let key = SurfaceKey::cc(ch, *cc);
+                let look = Look { flash: flashing(input, key), binding: None, toggled: false, hovered: false };
+                knob(&d, r, st, key, &look);
+            }
+            None => {
+                painter.circle_filled(r.center(), r.width() * 0.36, Color32::from_gray(45));
+            }
+        }
+        let letter = ["A", "B", "C", "D", "E", "F", "G", "H"][i];
+        painter.text(r.center_bottom() + Vec2::new(0.0, 14.0 * s), Align2::CENTER_CENTER, letter, d.font(8.0), label);
+    }
+
+    // Page keys; the shown page is lit.
+    for (i, (name, p)) in [("SRC", Page::Src), ("FLTR", Page::Fltr), ("AMP", Page::Amp), ("FX", Page::Fx)].into_iter().enumerate() {
+        let r = Rect::from_center_size(d.at(470.0 + i as f32 * 52.0, 206.0), Vec2::new(42.0, 20.0) * s);
+        let on = p == page;
+        painter.rect_filled(r, CornerRadius::same((3.0 * s) as u8), if on { ORANGE } else { Color32::from_gray(55) });
+        painter.text(r.center(), Align2::CENTER_CENTER, name, d.font(7.5), if on { Color32::from_gray(20) } else { Color32::from_gray(200) });
+    }
+
+    // Trig keys 1-16: lit for the key pressed (auto channel) and while the
+    // track on channel n plays a note.
+    let on_key = |k: &SurfaceKey, t: u8| k.kind == SurfaceKind::Note && digitakt::trig_key(k.channel, k.number) == Some(t);
+    for t in 0..16u8 {
+        let (col, row) = (t % 8, t / 8);
+        let r = Rect::from_center_size(d.at(150.0 + col as f32 * 60.0, 270.0 + row as f32 * 56.0), Vec2::new(44.0, 38.0) * s);
+        let held = st.values.iter().any(|(k, v)| on_key(k, t) && v.on);
+        let flash = input
+            .changed
+            .iter()
+            .filter(|(k, _)| on_key(k, t))
+            .filter_map(|(k, _)| flashing(input, *k))
+            .fold(0.0f32, f32::max);
+        let base = if t == ch { Color32::from_gray(80) } else { Color32::from_gray(50) };
+        let fill = if held { ORANGE } else { blend(base, ORANGE, flash) };
+        painter.rect_filled(r, CornerRadius::same((5.0 * s) as u8), fill);
+        let edge = if t == ch { Stroke::new(1.5, Color32::from_gray(200)) } else { Stroke::new(1.0, Color32::from_gray(80)) };
+        painter.rect_stroke(r, CornerRadius::same((5.0 * s) as u8), edge, StrokeKind::Inside);
+        let ink = if held || flash > 0.5 { Color32::from_gray(20) } else { Color32::from_gray(210) };
+        painter.text(r.center(), Align2::CENTER_CENTER, format!("{}", t + 1), d.font(11.0), ink);
+        if st.get(SurfaceKey::cc(t, digitakt::TRACK_MUTE)).is_some_and(|v| v.value > 0) {
+            painter.circle_filled(r.right_top() + Vec2::new(-6.0, 6.0) * s, 3.0 * s, Color32::from_rgb(220, 60, 50));
+        }
+    }
+
+    if let Some((_, _, name)) = last.and_then(|k| digitakt::param(k.number)) {
+        let v = last.and_then(|k| st.get(k)).map_or(0, |v| v.value);
+        painter.text(d.at(170.0, 190.0), Align2::LEFT_CENTER, format!("{name} · Spur {} = {v}", ch + 1), d.font(9.0), label);
+    }
 }

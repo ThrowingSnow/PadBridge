@@ -4,15 +4,20 @@
 //! device at the same time.
 //!
 //! One input port per source, so every callback knows which device it is.
-//! Sources come and go; a thread rescans every two seconds. The same thread
+//! Sources come and go: CoreMIDI only updates a client's view of them when
+//! its notifications are delivered, so the client is created with a
+//! notification callback on this thread, whose run loop then runs between
+//! scans; a notification triggers a rescan right away. The same thread
 //! sends to devices (destinations with the same name), e.g. LED updates.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop};
-use coremidi::{Client, Destination, Destinations, InputPort, PacketBuffer, Sources};
+use coremidi::{Client, Destination, Destinations, InputPort, Notification, PacketBuffer, Properties, Sources};
 use padbridge_core::midi::surface::MidiStream;
 
 use crate::platform::{ChannelDeviceOut, Event};
@@ -24,7 +29,14 @@ const SEND_TICK: Duration = Duration::from_millis(10);
 pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) -> ChannelDeviceOut {
     let (tx, outgoing) = channel::<(String, Vec<u8>)>();
     let spawned = std::thread::Builder::new().name("midi-devices".into()).spawn(move || {
-        let client = match Client::new("PadBridge Geräte") {
+        let setup_changed = Arc::new(AtomicBool::new(false));
+        let flag = setup_changed.clone();
+        let notified = move |n: &Notification| {
+            if matches!(n, Notification::SetupChanged | Notification::ObjectAdded(_) | Notification::ObjectRemoved(_)) {
+                flag.store(true, Ordering::Relaxed);
+            }
+        };
+        let client = match Client::new_with_notifications("PadBridge Geräte", notified) {
             Ok(c) => c,
             Err(status) => {
                 sink(Event::Error(format!("MIDI-Geräte nicht verfügbar (OSStatus {status})")));
@@ -47,7 +59,7 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) -> ChannelDe
             for source in Sources {
                 let Some(id) = source.unique_id() else { continue };
                 let base = source.display_name().unwrap_or_else(|| "MIDI".into());
-                if base == "PadBridge" {
+                if base == "PadBridge" || offline(&source) {
                     continue;
                 }
                 present.push(id);
@@ -85,7 +97,7 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) -> ChannelDe
             }
             // Let CoreMIDI deliver setup changes to this thread, and send what is queued.
             let next_scan = Instant::now() + RESCAN;
-            while Instant::now() < next_scan {
+            while Instant::now() < next_scan && !setup_changed.swap(false, Ordering::Relaxed) {
                 let started = Instant::now();
                 CFRunLoop::run_in_mode(unsafe { kCFRunLoopDefaultMode }, SEND_TICK, false);
                 if !send_queued(&outgoing, &output, &destinations) {
@@ -123,13 +135,18 @@ fn find_destinations() -> BTreeMap<String, Destination> {
     let mut out: BTreeMap<String, Destination> = BTreeMap::new();
     for dest in Destinations {
         let base = dest.display_name().unwrap_or_else(|| "MIDI".into());
-        if base == "PadBridge" {
+        if base == "PadBridge" || offline(&dest) {
             continue;
         }
         let name = unique_name(&base, out.keys().map(String::as_str));
         out.insert(name, dest);
     }
     out
+}
+
+/// Unplugged devices can stay listed as offline endpoints.
+fn offline(endpoint: &coremidi::Object) -> bool {
+    endpoint.get_property(&Properties::offline()).unwrap_or(false)
 }
 
 /// "Name", or "Name 2", "Name 3"... if that is taken.

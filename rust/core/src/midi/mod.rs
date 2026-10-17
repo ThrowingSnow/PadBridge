@@ -3,6 +3,7 @@
 mod clock;
 mod mapper;
 mod mapping;
+pub mod digitakt;
 pub mod models;
 pub mod surface;
 

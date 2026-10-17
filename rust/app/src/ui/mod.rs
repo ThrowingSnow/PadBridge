@@ -46,6 +46,8 @@ pub struct App {
     /// MIDI-Geräte tab: the device shown.
     surface: Option<String>,
     surfaces: SurfaceMapping,
+    /// Devices listed last frame, to switch to one that was just plugged in.
+    surfaces_seen: Vec<String>,
 }
 
 pub fn run(handle: Handle) -> eframe::Result {
@@ -65,6 +67,7 @@ pub fn run(handle: Handle) -> eframe::Result {
         midi_picture: true,
         pad_look: None,
         surface: None,
+        surfaces_seen: Vec::new(),
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
