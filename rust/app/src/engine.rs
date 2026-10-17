@@ -3,13 +3,15 @@
 //! timers. The UI only reads a `Snapshot` and sends `Command`s, so a slow
 //! frame can never delay input, and headless mode is simply "no UI".
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::mpsc::{channel, Receiver as ChannelRx, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use padbridge_core::key::NetKey;
 use padbridge_core::keymouse::{EmulationTarget, KeyMouseMapper, KeyMouseMapping, KmEvent, WireInput};
+use padbridge_core::midi::models::Model;
+use padbridge_core::midi::surface::{self, SurfaceKey, SurfaceMapper, SurfaceMapping, SurfaceState};
 use padbridge_core::midi::{ClockMessage, MidiClockTracker, MidiMapper, MidiMapping, MidiTarget};
 use padbridge_core::protocol::{self, Kind, Packet};
 use padbridge_core::ring::{Ring, RingMode};
@@ -18,7 +20,7 @@ use padbridge_core::{Control, ControllerInfo, ControllerState, PlayerIndicator};
 
 use crate::net::receiver::{Receiver, ReceiverStatus};
 use crate::net::sender::Link;
-use crate::platform::{self, Event, KeyMouseOut, MidiPort, PadOutput};
+use crate::platform::{self, DeviceOut, Event, KeyMouseOut, MidiPort, PadOutput};
 
 pub enum Msg {
     Platform(Event),
@@ -34,6 +36,7 @@ pub enum Command {
     SetMidi(MidiMapping),
     SetKeyMouse(KeyMouseMapping),
     SetNet(NetSettings),
+    SetSurfaces(SurfaceMapping),
     Rumble { id: String, low: f32, high: f32 },
     Indicator(PlayerIndicator),
     RingMode(RingMode),
@@ -69,10 +72,27 @@ pub struct DeviceView {
     pub net_pad: Option<u8>,
 }
 
+/// An external MIDI device (control surface) and what it has sent.
+#[derive(Clone, Default)]
+pub struct MidiInputView {
+    pub name: String,
+    pub state: SurfaceState,
+    /// When each control last changed, for highlighting.
+    pub changed: HashMap<SurfaceKey, Instant>,
+    /// Latest messages, newest last.
+    pub recent: VecDeque<String>,
+    /// Toggle buttons that are on (when remapping).
+    pub toggled: BTreeSet<SurfaceKey>,
+}
+
+/// Messages kept per device for the log.
+const RECENT_MIDI: usize = 40;
+
 /// Everything the UI shows. Copied out under a lock at most ~60 times a second.
 #[derive(Clone)]
 pub struct Snapshot {
     pub devices: Vec<DeviceView>,
+    pub midi_inputs: Vec<MidiInputView>,
     pub midi_error: Option<String>,
     pub keymouse_error: Option<String>,
     pub clock: ClockStatus,
@@ -84,6 +104,7 @@ pub struct Snapshot {
     pub midi: MidiMapping,
     pub keymouse: KeyMouseMapping,
     pub net: NetSettings,
+    pub surfaces: SurfaceMapping,
     pub listen_forced: bool,
 }
 
@@ -140,6 +161,12 @@ pub struct Engine {
     shared: Arc<Mutex<Snapshot>>,
     started: Instant,
     devices: BTreeMap<String, Device>,
+    midi_inputs: BTreeMap<String, MidiInputView>,
+    surfaces: SurfaceMapping,
+    surface_mappers: HashMap<String, SurfaceMapper>,
+    /// Per LCXL: template and LED values last sent.
+    leds_sent: HashMap<String, (u8, Vec<u8>)>,
+    device_out: Option<Box<dyn DeviceOut>>,
     midi_port: Option<Box<dyn MidiPort>>,
     keymouse_out: Option<Box<dyn KeyMouseOut>>,
     keymouse_error: Option<String>,
@@ -181,8 +208,10 @@ impl Engine {
         let midi: MidiMapping = settings::load(&dir, settings::MIDI_FILE);
         let keymouse: KeyMouseMapping = settings::load(&dir, settings::KEYMOUSE_FILE);
         let net: NetSettings = settings::load(&dir, settings::NET_FILE);
+        let surfaces: SurfaceMapping = settings::load(&dir, settings::SURFACES_FILE);
         let snapshot = Snapshot {
             devices: Vec::new(),
+            midi_inputs: Vec::new(),
             midi_error: None,
             keymouse_error: None,
             clock: ClockStatus::default(),
@@ -194,6 +223,7 @@ impl Engine {
             midi: midi.clone(),
             keymouse: keymouse.clone(),
             net: net.clone(),
+            surfaces: surfaces.clone(),
             listen_forced,
         };
         let shared = Arc::new(Mutex::new(snapshot));
@@ -205,6 +235,11 @@ impl Engine {
             shared,
             started: now,
             devices: BTreeMap::new(),
+            midi_inputs: BTreeMap::new(),
+            surfaces,
+            surface_mappers: HashMap::new(),
+            leds_sent: HashMap::new(),
+            device_out: None,
             midi_port: None,
             keymouse_out: None,
             keymouse_error: None,
@@ -262,6 +297,7 @@ impl Engine {
             self.log("Nur-Empfangen-Modus: lokale Pads werden nicht gelesen".into());
         } else {
             platform::start_pads(&self.tx);
+            self.device_out = platform::start_midi_devices(&self.tx);
         }
         self.reconcile_link();
         self.reconcile_receiver();
@@ -336,6 +372,8 @@ impl Engine {
             Msg::Platform(Event::PadState(id, state)) => self.pad_state(&id, state),
             Msg::Platform(Event::PadGone(id)) => self.pad_gone(&id),
             Msg::Platform(Event::MidiIn(bytes)) => self.local_midi_in(bytes),
+            Msg::Platform(Event::MidiDevices(names)) => self.midi_devices(names),
+            Msg::Platform(Event::DeviceMidi(name, bytes)) => self.device_midi(&name, &bytes),
             Msg::Platform(Event::Error(e)) => self.log(e),
             Msg::Peer(generation, packet) => self.peer_packet(generation, packet),
             Msg::NetMidiOut(bytes) => {
@@ -393,6 +431,79 @@ impl Engine {
             self.log(format!("Getrennt: {}", dev.info.name));
         }
         self.changed = true;
+    }
+
+    fn midi_devices(&mut self, names: Vec<String>) {
+        let gone: Vec<String> = self.midi_inputs.keys().filter(|n| !names.contains(n)).cloned().collect();
+        for name in gone {
+            self.midi_inputs.remove(&name);
+            self.surface_mappers.remove(&name);
+            self.leds_sent.remove(&name);
+            self.log(format!("MIDI-Gerät getrennt: {name}"));
+        }
+        for name in names {
+            if !self.midi_inputs.contains_key(&name) {
+                self.log(format!("MIDI-Gerät: {name}"));
+                self.midi_inputs.insert(name.clone(), MidiInputView { name: name.clone(), ..Default::default() });
+                self.update_leds(&name);
+            }
+        }
+        self.changed = true;
+    }
+
+    /// A message from an external MIDI device: remembered for display.
+    fn device_midi(&mut self, name: &str, bytes: &[u8]) {
+        // Clock and active sensing would flood the log.
+        if bytes.first().is_some_and(|&b| b >= 0xF8) {
+            return;
+        }
+        let Some(input) = self.midi_inputs.get_mut(name) else { return };
+        if let Some(key) = input.state.apply(bytes) {
+            input.changed.insert(key, Instant::now());
+        }
+        if let Some(template) = Model::of(name).and_then(|m| m.template_change(bytes)) {
+            input.state.channel = Some(template);
+        }
+        input.recent.push_back(surface::describe(bytes));
+        while input.recent.len() > RECENT_MIDI {
+            input.recent.pop_front();
+        }
+        if let Some(mapping) = self.surfaces.devices.get(name).filter(|m| m.enabled) {
+            let out = self.surface_mappers.entry(name.to_string()).or_default().process(mapping, bytes);
+            if let Some(port) = &self.midi_port {
+                for m in &out {
+                    port.send(m);
+                }
+            }
+        }
+        self.update_leds(name);
+        self.changed = true;
+    }
+
+    /// Brings the LEDs of a known surface in line with its mapping:
+    /// only what changed is sent; switching remapping off clears them.
+    fn update_leds(&mut self, name: &str) {
+        let (Some(out), Some(input)) = (&self.device_out, self.midi_inputs.get(name)) else { return };
+        let Some(model) = Model::of(name) else { return };
+        let channel = input.state.channel.unwrap_or(model.default_channel());
+        let Some(mapping) = self.surfaces.devices.get(name).filter(|m| m.enabled) else {
+            if let Some((template, _)) = self.leds_sent.remove(name) {
+                for m in model.reset(template) {
+                    out.send(name, &m);
+                }
+            }
+            return;
+        };
+        let none = BTreeSet::new();
+        let toggled = self.surface_mappers.get(name).map_or(&none, |m| &m.toggled);
+        let want = model.leds(mapping, &input.state, toggled, channel);
+        let before = self.leds_sent.get(name).filter(|(t, _)| *t == channel).map(|(_, l)| l);
+        for (i, &value) in want.iter().enumerate() {
+            if before.is_none_or(|b| b[i] != value) {
+                out.send(name, &model.led_message(channel, i, value));
+            }
+        }
+        self.leds_sent.insert(name.to_string(), (channel, want));
     }
 
     /// MIDI arriving at the local port (from a DAW on this machine).
@@ -480,6 +591,19 @@ impl Engine {
                 if listen_changed {
                     self.receiver = None;
                     self.reconcile_receiver();
+                }
+            }
+            Command::SetSurfaces(surfaces) => {
+                self.surfaces = surfaces;
+                for (name, mapper) in self.surface_mappers.iter_mut() {
+                    match self.surfaces.devices.get(name) {
+                        Some(m) if m.enabled => mapper.retain(m),
+                        _ => mapper.toggled.clear(),
+                    }
+                }
+                let names: Vec<String> = self.midi_inputs.keys().cloned().collect();
+                for name in names {
+                    self.update_leds(&name);
                 }
             }
             Command::Rumble { id, low, high } => {
@@ -812,6 +936,7 @@ impl Engine {
             settings::save(&dir, settings::MIDI_FILE, &self.midi),
             settings::save(&dir, settings::KEYMOUSE_FILE, &self.keymouse),
             settings::save(&dir, settings::NET_FILE, &self.net),
+            settings::save(&dir, settings::SURFACES_FILE, &self.surfaces),
         ];
         if let Some(Err(e)) = results.into_iter().find(|r| r.is_err()) {
             self.log(format!("Speichern fehlgeschlagen: {e}"));
@@ -853,6 +978,15 @@ impl Engine {
         };
         let mut s = self.shared.lock().unwrap();
         s.devices = devices;
+        s.midi_inputs = self
+            .midi_inputs
+            .values()
+            .map(|i| MidiInputView {
+                toggled: self.surface_mappers.get(&i.name).map(|m| m.toggled.clone()).unwrap_or_default(),
+                ..i.clone()
+            })
+            .collect();
+        s.surfaces = self.surfaces.clone();
         s.keymouse_error = self.keymouse_error.clone();
         s.clock = self.clock_status.clone();
         s.ring_mode = self.ring.mode();

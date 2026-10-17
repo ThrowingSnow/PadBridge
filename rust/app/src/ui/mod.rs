@@ -1,4 +1,4 @@
-//! The window: four tabs over the engine's snapshot. Settings are edited on
+//! The window: five tabs over the engine's snapshot. Settings are edited on
 //! local copies and every change is sent to the engine as a command; the
 //! engine saves them.
 
@@ -7,11 +7,13 @@ mod midi;
 mod monitor;
 mod network;
 mod pad_map;
+mod surfaces;
 
 use std::time::Duration;
 
 use eframe::egui;
 use padbridge_core::keymouse::KeyMouseMapping;
+use padbridge_core::midi::surface::SurfaceMapping;
 use padbridge_core::midi::MidiMapping;
 use padbridge_core::settings::NetSettings;
 
@@ -21,6 +23,7 @@ use crate::engine::{Command, Handle, Snapshot};
 enum Tab {
     Monitor,
     Midi,
+    Surfaces,
     KeyMouse,
     Network,
 }
@@ -40,6 +43,9 @@ pub struct App {
     midi_picture: bool,
     /// MIDI tab picture: forced outline, None follows the selected pad.
     pad_look: Option<pad_map::Look>,
+    /// MIDI-Geräte tab: the device shown.
+    surface: Option<String>,
+    surfaces: SurfaceMapping,
 }
 
 pub fn run(handle: Handle) -> eframe::Result {
@@ -48,6 +54,7 @@ pub fn run(handle: Handle) -> eframe::Result {
         midi: snap.midi.clone(),
         keymouse: snap.keymouse.clone(),
         net: snap.net.clone(),
+        surfaces: snap.surfaces.clone(),
         handle,
         snap,
         tab: Tab::Monitor,
@@ -57,6 +64,7 @@ pub fn run(handle: Handle) -> eframe::Result {
         preset_open: false,
         midi_picture: true,
         pad_look: None,
+        surface: None,
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -79,6 +87,7 @@ impl eframe::App for App {
                 for (tab, title) in [
                     (Tab::Monitor, "Monitor"),
                     (Tab::Midi, "MIDI"),
+                    (Tab::Surfaces, "MIDI-Geräte"),
                     (Tab::KeyMouse, "Tastatur/Maus"),
                     (Tab::Network, "Netzwerk"),
                 ] {
@@ -90,6 +99,7 @@ impl eframe::App for App {
             egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| match self.tab {
                 Tab::Monitor => self.monitor(ui),
                 Tab::Midi => self.midi_tab(ui),
+                Tab::Surfaces => self.surfaces_tab(ui),
                 Tab::KeyMouse => self.keymouse_tab(ui),
                 Tab::Network => self.network_tab(ui),
             });

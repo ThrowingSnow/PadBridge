@@ -10,6 +10,10 @@ fn unsupported() -> io::Error {
 
 pub fn start_pads(_events: &EventSink) {}
 
+pub fn start_midi_devices(_events: &EventSink) -> Option<Box<dyn super::DeviceOut>> {
+    None
+}
+
 pub fn open_midi(_events: &EventSink) -> io::Result<Box<dyn MidiPort>> {
     Err(unsupported())
 }

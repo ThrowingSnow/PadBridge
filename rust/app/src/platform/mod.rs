@@ -34,6 +34,10 @@ pub enum Event {
     PadGone(String),
     /// Raw MIDI from the local port (e.g. clock from a DAW).
     MidiIn(Vec<u8>),
+    /// The MIDI devices currently listened to (hardware, other apps' ports).
+    MidiDevices(Vec<String>),
+    /// One complete message (SysEx included) from such a device.
+    DeviceMidi(String, Vec<u8>),
     Error(String),
 }
 
@@ -49,6 +53,20 @@ pub trait PadOutput: Send {
 /// The virtual MIDI port "PadBridge" on this machine.
 pub trait MidiPort: Send {
     fn send(&self, message: &[u8]);
+}
+
+/// Sends to external MIDI devices by name (e.g. LEDs of a control surface).
+pub trait DeviceOut: Send {
+    fn send(&self, device: &str, message: &[u8]);
+}
+
+/// Hands messages to the thread that owns the device connections.
+pub(crate) struct ChannelDeviceOut(pub std::sync::mpsc::Sender<(String, Vec<u8>)>);
+
+impl DeviceOut for ChannelDeviceOut {
+    fn send(&self, device: &str, message: &[u8]) {
+        let _ = self.0.send((device.to_string(), message.to_vec()));
+    }
 }
 
 /// Keyboard/mouse emulation on this machine.

@@ -1,6 +1,7 @@
 //! Linux: pads via evdev (the kernel's xpad driver already speaks the 360
 //! protocol), MIDI via an ALSA sequencer port, output via uinput.
 
+mod alsa_devices;
 mod alsa_midi;
 mod evdev_pads;
 mod uinput_keymouse;
@@ -13,6 +14,11 @@ use super::{EventSink, KeyMouseOut, MidiPort, VirtualKeyMouse, VirtualPad};
 /// Starts hotplug scanning for game pads; events go to the engine.
 pub fn start_pads(events: &EventSink) {
     evdev_pads::start(super::sink(events));
+}
+
+/// Starts listening to hardware MIDI devices.
+pub fn start_midi_devices(events: &EventSink) -> Option<Box<dyn super::DeviceOut>> {
+    Some(Box::new(alsa_devices::start(super::sink(events))))
 }
 
 pub fn open_midi(events: &EventSink) -> io::Result<Box<dyn MidiPort>> {

@@ -4,6 +4,20 @@ Versions follow [Semantic Versioning](https://semver.org). The Mac app and
 `linux/padbridge-netpad` share one version number; the network protocol is
 versioned separately by its magic (`PBG1` = protocol v1).
 
+## [Unreleased]
+
+### Added
+- "MIDI-Geräte" tab: listens to external MIDI devices (CoreMIDI on macOS,
+  ALSA hardware ports on Linux) alongside other apps, with all values seen
+  and a message log, SysEx included.
+- Drawings with live values for the Novation Launch Control XL (templates
+  followed) and the Akai MIDImix.
+- Remapping per device and template, sent through the "PadBridge" port:
+  CC/note, number, channel, momentary/toggle for buttons.
+- Device LEDs from the mapping: colour per control on the Launch Control XL
+  (fixed, brightness, centre-bright for bipolar knobs, or a green-yellow-red
+  meter), on/off on the MIDImix; toggles light up. Saved in `surfaces.json`.
+
 ## [0.4.2] - 2026-10-16
 
 ### Added

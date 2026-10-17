@@ -6,6 +6,7 @@
 //! so the receiver here accepts MIDI and keyboard/mouse only.
 
 mod cg_events;
+mod coremidi_devices;
 mod coremidi_port;
 mod hid_pads;
 mod usb_pads;
@@ -17,6 +18,11 @@ use super::{EventSink, KeyMouseOut, MidiPort, VirtualKeyMouse, VirtualPad};
 pub fn start_pads(events: &EventSink) {
     usb_pads::start(super::sink(events));
     hid_pads::start(super::sink(events));
+}
+
+/// Starts listening to the system's MIDI devices.
+pub fn start_midi_devices(events: &EventSink) -> Option<Box<dyn super::DeviceOut>> {
+    Some(Box::new(coremidi_devices::start(super::sink(events))))
 }
 
 pub fn open_midi(events: &EventSink) -> io::Result<Box<dyn MidiPort>> {
