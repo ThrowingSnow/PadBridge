@@ -17,6 +17,8 @@ versioned separately by its magic (`PBG1` = protocol v1).
 - Device LEDs from the mapping: colour per control on the Launch Control XL
   (fixed, brightness, centre-bright for bipolar knobs, or a green-yellow-red
   meter), on/off on the MIDImix; toggles light up. Saved in `surfaces.json`.
+- Akai APC mini mk2: drawing, remapping and LEDs (pad colours red to green
+  in three brightness levels; red track and green scene buttons on/off).
 - Elektron Digitakt II view: the screen follows the page and track of the
   last parameter turned (SRC, FLTR, AMP, FX), encoders A-H and the track
   level move along, trig keys light per track (and per key pressed, via the

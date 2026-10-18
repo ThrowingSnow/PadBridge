@@ -369,7 +369,8 @@ fn binding_editor(ui: &mut egui::Ui, model: Model, ctl: &Ctl, key: SurfaceKey, m
             }
         });
     }
-    if ctl.led.is_some() && !model.two_colour_leds() {
+    let colour = ctl.led.is_some_and(|i| model.colour_led(i));
+    if ctl.led.is_some() && !colour {
         ui.horizontal(|ui| {
             ui.label("LED");
             changed |= ui.selectable_value(&mut b.led, LedColour::Off, "aus").changed();

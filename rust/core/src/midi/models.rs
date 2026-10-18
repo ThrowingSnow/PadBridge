@@ -8,6 +8,9 @@
 //!   `F0 00 20 29 02 11 78 <template> <index> <value> F7`.
 //! - Akai MIDImix: channel 1; the Mute, Rec Arm and Bank buttons have
 //!   single-colour LEDs, switched with a note on (127 on, 0 off).
+//! - Akai APC mini mk2: channel 1. RGB pads take a note on whose velocity
+//!   picks a palette colour and whose channel the brightness (1-7 = 10-100 %);
+//!   the red track and green scene buttons take velocity 1 for on.
 
 use std::collections::BTreeSet;
 
@@ -18,6 +21,7 @@ use super::ButtonMode;
 pub enum Model {
     LaunchControlXl,
     MidiMix,
+    ApcMiniMk2,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +81,9 @@ impl Model {
             Some(Model::LaunchControlXl)
         } else if lower.contains("midi mix") || lower.contains("midimix") {
             Some(Model::MidiMix)
+        } else if lower.contains("apc mini mk2") && !lower.contains("notes") {
+            // Its second port only carries the Drum/Note modes.
+            Some(Model::ApcMiniMk2)
         } else {
             None
         }
@@ -86,13 +93,17 @@ impl Model {
     pub fn default_channel(self) -> u8 {
         match self {
             Model::LaunchControlXl => 8, // factory template 1, the power-on default
-            Model::MidiMix => 0,
+            Model::MidiMix | Model::ApcMiniMk2 => 0,
         }
     }
 
-    /// Red and green LEDs (else single-colour, only on/off).
-    pub fn two_colour_leds(self) -> bool {
-        self == Model::LaunchControlXl
+    /// LED `index` can show colours (else single-colour, only on/off).
+    pub fn colour_led(self, index: usize) -> bool {
+        match self {
+            Model::LaunchControlXl => true,
+            Model::MidiMix => false,
+            Model::ApcMiniMk2 => index < 64,
+        }
     }
 
     /// Size of the drawing in units.
@@ -100,6 +111,7 @@ impl Model {
         match self {
             Model::LaunchControlXl => (660.0, 424.0),
             Model::MidiMix => (660.0, 440.0),
+            Model::ApcMiniMk2 => (660.0, 540.0),
         }
     }
 
@@ -108,7 +120,7 @@ impl Model {
         match self {
             Model::LaunchControlXl if channel < 8 => Some(format!("User {}", channel + 1)),
             Model::LaunchControlXl => Some(format!("Factory {}", channel - 7)),
-            Model::MidiMix => None,
+            Model::MidiMix | Model::ApcMiniMk2 => None,
         }
     }
 
@@ -136,6 +148,7 @@ impl Model {
                 c("Bank", 590.0, 98.0, true),
                 c("Master", 590.0, 238.0, true),
             ],
+            Model::ApcMiniMk2 => vec![c("Scene Launch", APC_SIDE_X, 14.0, true), c("Master", APC_SIDE_X, 368.0, true)],
         }
     }
 
@@ -143,6 +156,7 @@ impl Model {
         match self {
             Model::LaunchControlXl => lcxl_controls(),
             Model::MidiMix => midimix_controls(),
+            Model::ApcMiniMk2 => apc_controls(),
         }
     }
 
@@ -150,6 +164,7 @@ impl Model {
         match self {
             Model::LaunchControlXl => 48,
             Model::MidiMix => 18,
+            Model::ApcMiniMk2 => 80,
         }
     }
 
@@ -158,6 +173,7 @@ impl Model {
         match self {
             Model::LaunchControlXl => vec![0xF0, 0x00, 0x20, 0x29, 0x02, 0x11, 0x78, channel & 0x0F, index as u8, value, 0xF7],
             Model::MidiMix => vec![0x90 | (channel & 0x0F), MIX_LED_NOTES[index], value],
+            Model::ApcMiniMk2 => apc_led_message(index, value),
         }
     }
 
@@ -165,7 +181,7 @@ impl Model {
     pub fn reset(self, channel: u8) -> Vec<Vec<u8>> {
         match self {
             Model::LaunchControlXl => vec![vec![0xB0 | (channel & 0x0F), 0, 0]],
-            Model::MidiMix => (0..self.led_count()).map(|i| self.led_message(channel, i, 0)).collect(),
+            Model::MidiMix | Model::ApcMiniMk2 => (0..self.led_count()).map(|i| self.led_message(channel, i, 0)).collect(),
         }
     }
 
@@ -209,6 +225,8 @@ impl Model {
                     0
                 }
             }
+            // Packed; `apc_led_message` turns it into colour and brightness.
+            Model::ApcMiniMk2 => red.min(3) * 4 + green.min(3),
         }
     }
 }
@@ -363,6 +381,88 @@ fn midimix_controls() -> Vec<Ctl> {
     out
 }
 
+// MARK: APC mini mk2
+
+/// Pads are notes 0-63 from the bottom left, row by row.
+const APC_TRACK: u8 = 100;
+const APC_SCENE: u8 = 112;
+const APC_SHIFT: u8 = 122;
+const APC_FADERS: u8 = 48;
+const APC_SIDE_X: f32 = 578.0;
+
+fn apc_controls() -> Vec<Ctl> {
+    let x = |c: usize| 50.0 + c as f32 * 62.0;
+    let row_y = |row: usize| 40.0 + (7 - row) as f32 * 36.0;
+    let base = |kind, note, number, name: String, led, at, size| Ctl {
+        kind,
+        note,
+        number,
+        name,
+        led,
+        at,
+        size,
+        caption: None,
+        arrow: None,
+        led_hint: None,
+    };
+    let mut out = Vec::new();
+    for row in 0..8 {
+        for c in 0..8 {
+            let i = row * 8 + c;
+            out.push(base(CtlKind::Button, true, i as u8, format!("Pad {}", i + 1), Some(i), (x(c), row_y(row)), (54.0, 28.0)));
+        }
+    }
+    let track = ["Volume", "Pan", "Send", "Device"];
+    for c in 0..8 {
+        let mut ctl = base(CtlKind::Button, true, APC_TRACK + c as u8, format!("Track {}", c + 1), Some(64 + c), (x(c), 334.0), (52.0, 26.0));
+        match track.get(c) {
+            Some(caption) => ctl.caption = Some(caption),
+            None => ctl.arrow = Some([0, 1, 2, 3][c - 4]),
+        }
+        ctl.led_hint = Some("Diese Taste hat nur eine rote LED.");
+        out.push(ctl);
+    }
+    let scene = ["Clip Stop", "Solo", "Mute", "Rec Arm", "Select", "Drum", "Note", "Stop All"];
+    for (i, caption) in scene.into_iter().enumerate() {
+        let mut ctl =
+            base(CtlKind::Button, true, APC_SCENE + i as u8, caption.into(), Some(72 + i), (APC_SIDE_X, row_y(7 - i)), (78.0, 28.0));
+        ctl.caption = Some(caption);
+        ctl.led_hint = Some("Diese Taste hat nur eine grüne LED.");
+        out.push(ctl);
+    }
+    let mut shift = base(CtlKind::Button, true, APC_SHIFT, "Shift".into(), None, (APC_SIDE_X, 334.0), (78.0, 26.0));
+    shift.caption = Some("Shift");
+    out.push(shift);
+    for c in 0..9 {
+        let (name, at) = if c < 8 { (format!("Fader {}", c + 1), x(c)) } else { ("Master".into(), APC_SIDE_X) };
+        out.push(base(CtlKind::Fader, false, APC_FADERS + c as u8, name, None, (at, 450.0), (30.0, 136.0)));
+    }
+    out
+}
+
+/// `value` is red * 4 + green (each 0..=3), see `Model::encode`.
+fn apc_led_message(index: usize, value: u8) -> Vec<u8> {
+    let (red, green) = (value / 4, value % 4);
+    match index {
+        0..64 => {
+            // Palette: 5 red, 9 orange, 13 yellow, 17 lime, 21 green.
+            let colour = match (red, green) {
+                (0, 0) => 0,
+                (_, 0) => 5,
+                (0, _) => 21,
+                (r, g) if r > g => 9,
+                (r, g) if r == g => 13,
+                _ => 17,
+            };
+            // Brightness channels 0-6 are 10 % to 100 %.
+            let channel = [0, 1, 3, 6][red.max(green) as usize];
+            vec![0x90 | channel, index as u8, colour]
+        }
+        64..72 => vec![0x90, APC_TRACK + (index - 64) as u8, (value > 0) as u8],
+        _ => vec![0x90, APC_SCENE + (index - 72) as u8, (value > 0) as u8],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,8 +509,20 @@ mod tests {
     }
 
     #[test]
+    fn apc_pads_take_colour_and_brightness() {
+        let m = Model::ApcMiniMk2;
+        assert_eq!(Model::of("APC mini mk2 Control"), Some(m));
+        assert_eq!(Model::of("APC mini mk2 Notes"), None);
+        assert_eq!(m.led_message(0, 9, m.encode(3, 0)), vec![0x96, 9, 5]);
+        assert_eq!(m.led_message(0, 9, m.encode(0, 1)), vec![0x91, 9, 21]);
+        assert_eq!(m.led_message(0, 9, m.encode(0, 0)), vec![0x90, 9, 0]);
+        let scene = m.controls().into_iter().find(|c| c.name == "Solo").unwrap();
+        assert_eq!(m.led_message(0, scene.led.unwrap(), m.encode(3, 3)), vec![0x90, 113, 1]);
+    }
+
+    #[test]
     fn leds_are_unique_per_model() {
-        for m in [Model::LaunchControlXl, Model::MidiMix] {
+        for m in [Model::LaunchControlXl, Model::MidiMix, Model::ApcMiniMk2] {
             let mut seen = BTreeSet::new();
             for ctl in m.controls() {
                 if let Some(i) = ctl.led {
