@@ -20,6 +20,11 @@ pub const SURFACES_FILE: &str = "surfaces.json";
 pub const KEY_FILE: &str = "netpad.key";
 
 pub fn config_dir() -> PathBuf {
+    if cfg!(windows) {
+        if let Some(appdata) = std::env::var_os("APPDATA").map(PathBuf::from).filter(|p| p.is_absolute()) {
+            return appdata.join("PadBridge");
+        }
+    }
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     if cfg!(target_os = "macos") {
         home.join("Library/Application Support/PadBridge")

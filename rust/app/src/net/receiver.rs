@@ -8,7 +8,6 @@
 
 use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
-use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -170,11 +169,7 @@ impl Loop {
         let mut last_status = Instant::now();
         while !stop.load(Ordering::Relaxed) {
             // Sleep until a datagram arrives, a game sends force feedback, or the tick passes.
-            let mut fds: Vec<libc::pollfd> = std::iter::once(self.socket.as_raw_fd())
-                .chain(self.slots.values().filter_map(|s| s.pad.poll_fd()))
-                .map(|fd| libc::pollfd { fd, events: libc::POLLIN, revents: 0 })
-                .collect();
-            unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, TICK.as_millis() as i32) };
+            self.wait();
 
             while let Ok((len, from)) = self.socket.recv_from(&mut buf) {
                 if len != PACKET_LEN {
@@ -205,6 +200,26 @@ impl Loop {
         if let Some(km) = self.keymouse.as_mut() {
             let _ = km.release_all();
         }
+    }
+
+    #[cfg(unix)]
+    fn wait(&self) {
+        use std::os::unix::io::AsRawFd;
+        let mut fds: Vec<libc::pollfd> = std::iter::once(self.socket.as_raw_fd())
+            .chain(self.slots.values().filter_map(|s| s.pad.poll_fd()))
+            .map(|fd| libc::pollfd { fd, events: libc::POLLIN, revents: 0 })
+            .collect();
+        unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, TICK.as_millis() as i32) };
+    }
+
+    /// No poll() here, and virtual pads have no descriptor to wait on: block on
+    /// the socket for one tick instead.
+    #[cfg(not(unix))]
+    fn wait(&self) {
+        let _ = self.socket.set_nonblocking(false);
+        let _ = self.socket.set_read_timeout(Some(TICK));
+        let _ = self.socket.peek_from(&mut [0u8; 1]);
+        let _ = self.socket.set_nonblocking(true);
     }
 
     fn fresh(&mut self, from: SocketAddr, seq: u64) -> bool {
