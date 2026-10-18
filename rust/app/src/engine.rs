@@ -30,6 +30,10 @@ pub enum Msg {
     NetMidiOut(Vec<u8>),
     /// MIDI of one of the peer's MIDI devices, for that device's own port.
     NetDeviceMidi(String, Vec<u8>),
+    /// What one of the peer's MIDI devices sent, for the live view here.
+    NetDeviceRaw(String, Vec<u8>),
+    /// The peer announced one of its MIDI devices (every second).
+    NetDeviceSeen(String),
     Log(String),
     Cmd(Command),
 }
@@ -85,6 +89,16 @@ pub struct MidiInputView {
     pub recent: VecDeque<String>,
     /// Toggle buttons that are on (when remapping).
     pub toggled: BTreeSet<SurfaceKey>,
+    /// A device of the network peer, shown read-only; `name` is its name there.
+    pub remote: Option<String>,
+}
+
+/// How long a peer's device stays listed after its last announcement.
+const REMOTE_DEVICE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The entry of a peer's device in the device list.
+fn remote_entry(device: &str) -> String {
+    format!("{device} · Netzwerk")
 }
 
 /// Messages kept per device for the log.
@@ -170,6 +184,8 @@ pub struct Engine {
     leds_sent: HashMap<String, (u8, Vec<u8>)>,
     /// Network slot of each device whose MIDI goes to the peer (stable while running).
     device_slots: HashMap<String, u8>,
+    /// The peer's devices listed here, with when they were last announced.
+    remote_seen: HashMap<String, Instant>,
     device_out: Option<Box<dyn DeviceOut>>,
     midi_port: Option<Box<dyn MidiPort>>,
     keymouse_out: Option<Box<dyn KeyMouseOut>>,
@@ -244,6 +260,7 @@ impl Engine {
             surface_mappers: HashMap::new(),
             leds_sent: HashMap::new(),
             device_slots: HashMap::new(),
+            remote_seen: HashMap::new(),
             device_out: None,
             midi_port: None,
             keymouse_out: None,
@@ -391,6 +408,20 @@ impl Engine {
                     port.send_device(&device, &bytes);
                 }
             }
+            Msg::NetDeviceSeen(device) => self.remote_device_seen(&device),
+            Msg::NetDeviceRaw(device, bytes) => {
+                self.remote_device_seen(&device);
+                let entry = remote_entry(&device);
+                match protocol::template_of(&bytes) {
+                    Some(template) => {
+                        if let Some(input) = self.midi_inputs.get_mut(&entry) {
+                            input.state.channel = Some(template);
+                            self.changed = true;
+                        }
+                    }
+                    None => self.device_midi(&entry, &bytes),
+                }
+            }
             Msg::Log(line) => self.log(line),
             Msg::Cmd(cmd) => self.command(cmd),
         }
@@ -444,7 +475,12 @@ impl Engine {
     }
 
     fn midi_devices(&mut self, names: Vec<String>) {
-        let gone: Vec<String> = self.midi_inputs.keys().filter(|n| !names.contains(n)).cloned().collect();
+        let gone: Vec<String> = self
+            .midi_inputs
+            .values()
+            .filter(|i| i.remote.is_none() && !names.contains(&i.name))
+            .map(|i| i.name.clone())
+            .collect();
         for name in gone {
             self.midi_inputs.remove(&name);
             self.surface_mappers.remove(&name);
@@ -461,6 +497,17 @@ impl Engine {
         self.changed = true;
     }
 
+    fn remote_device_seen(&mut self, device: &str) {
+        let entry = remote_entry(device);
+        if !self.midi_inputs.contains_key(&entry) {
+            self.log(format!("MIDI-Gerät der Gegenstelle: {device}"));
+            let view = MidiInputView { name: entry.clone(), remote: Some(device.to_string()), ..Default::default() };
+            self.midi_inputs.insert(entry.clone(), view);
+            self.changed = true;
+        }
+        self.remote_seen.insert(entry, Instant::now());
+    }
+
     /// A message from an external MIDI device: remembered for display.
     fn device_midi(&mut self, name: &str, bytes: &[u8]) {
         // Clock and active sensing would flood the log.
@@ -468,17 +515,19 @@ impl Engine {
             return;
         }
         let Some(input) = self.midi_inputs.get_mut(name) else { return };
+        let remote = input.remote.is_some();
         if let Some(key) = input.state.apply(bytes) {
             input.changed.insert(key, Instant::now());
         }
-        if let Some(template) = Model::of(name).and_then(|m| m.template_change(bytes)) {
+        let template = Model::of(name).and_then(|m| m.template_change(bytes));
+        if let Some(template) = template {
             input.state.channel = Some(template);
         }
         input.recent.push_back(surface::describe(bytes));
         while input.recent.len() > RECENT_MIDI {
             input.recent.pop_front();
         }
-        if let Some(mapping) = self.surfaces.devices.get(name).filter(|m| m.enabled) {
+        if let Some(mapping) = self.surfaces.devices.get(name).filter(|m| m.enabled && !remote) {
             let out = self.surface_mappers.entry(name.to_string()).or_default().process(mapping, bytes);
             match mapping.target {
                 MidiTarget::Local => {
@@ -502,6 +551,14 @@ impl Engine {
                             link.send_device_name(slot, name);
                         }
                         link.send_device_midi(slot, &out);
+                        // The raw values too, so the peer can draw the device.
+                        let raw = match template {
+                            Some(t) => protocol::template_message(t),
+                            None => bytes.to_vec(),
+                        };
+                        if raw.len() <= 3 {
+                            link.send_device_raw(slot, &[raw]);
+                        }
                     }
                 }
             }
@@ -889,6 +946,15 @@ impl Engine {
 
     fn timers(&mut self) {
         let now = Instant::now();
+
+        let gone: Vec<String> =
+            self.remote_seen.iter().filter(|(_, t)| t.elapsed() > REMOTE_DEVICE_TIMEOUT).map(|(n, _)| n.clone()).collect();
+        for entry in gone {
+            self.remote_seen.remove(&entry);
+            self.midi_inputs.remove(&entry);
+            self.log(format!("MIDI-Gerät der Gegenstelle weg: {entry}"));
+            self.changed = true;
+        }
 
         if self.keymouse.enabled && now >= self.next_keymouse_tick {
             let dt = now.duration_since(self.last_keymouse_tick).as_secs_f64().min(0.1);

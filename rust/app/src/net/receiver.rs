@@ -181,7 +181,7 @@ impl Loop {
                     continue;
                 }
                 let Some(packet) = protocol::decode(&self.key.0, &buf[..len]) else { continue };
-                let device = matches!(packet.kind, Kind::DeviceMidi | Kind::DeviceName);
+                let device = matches!(packet.kind, Kind::DeviceMidi | Kind::DeviceName | Kind::DeviceRaw);
                 if !self.fresh(from, packet.seq) || (!device && packet.pad >= MAX_PADS) {
                     continue;
                 }
@@ -282,8 +282,9 @@ impl Loop {
                 if let Some(name) = assembler.add(&packet.payload) {
                     if self.devices.get(&packet.pad) != Some(&name) {
                         self.log(format!("Netzwerk: MIDI-Gerät „{name}“ der Gegenstelle"));
-                        self.devices.insert(packet.pad, name);
+                        self.devices.insert(packet.pad, name.clone());
                     }
+                    let _ = self.events.send(Msg::NetDeviceSeen(name));
                 }
             }
             Kind::DeviceMidi => {
@@ -292,6 +293,13 @@ impl Loop {
                     self.midi_packets += 1;
                     for message in protocol::midi_messages(&packet.payload) {
                         let _ = self.events.send(Msg::NetDeviceMidi(name.clone(), message));
+                    }
+                }
+            }
+            Kind::DeviceRaw => {
+                if let Some(name) = self.devices.get(&packet.pad) {
+                    for message in protocol::midi_messages(&packet.payload) {
+                        let _ = self.events.send(Msg::NetDeviceRaw(name.clone(), message));
                     }
                 }
             }

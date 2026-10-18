@@ -59,7 +59,7 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) -> ChannelDe
             for source in Sources {
                 let Some(id) = source.unique_id() else { continue };
                 let base = source.display_name().unwrap_or_else(|| "MIDI".into());
-                if base == "PadBridge" || offline(&source) {
+                if is_ours(&base) || offline(&source) {
                     continue;
                 }
                 present.push(id);
@@ -135,7 +135,7 @@ fn find_destinations() -> BTreeMap<String, Destination> {
     let mut out: BTreeMap<String, Destination> = BTreeMap::new();
     for dest in Destinations {
         let base = dest.display_name().unwrap_or_else(|| "MIDI".into());
-        if base == "PadBridge" || offline(&dest) {
+        if is_ours(&base) || offline(&dest) {
             continue;
         }
         let name = unique_name(&base, out.keys().map(String::as_str));
@@ -158,4 +158,9 @@ fn unique_name<'a>(base: &str, taken: impl Iterator<Item = &'a str> + Clone) -> 
         n += 1;
     }
     name
+}
+
+/// Our own ports: "PadBridge" and the ones for a peer's devices.
+fn is_ours(name: &str) -> bool {
+    name == "PadBridge" || name.starts_with("PadBridge ")
 }

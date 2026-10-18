@@ -70,9 +70,26 @@ impl App {
         });
 
         let mut changed = false;
-        let mapping = self.surfaces.devices.entry(input.name.clone()).or_default();
-        changed |= ui.checkbox(&mut mapping.enabled, "Umbelegen und weiterleiten").changed();
-        if mapping.enabled {
+        // A peer's device is only shown; its settings live where it is plugged in.
+        let mut scratch = DeviceMapping::default();
+        let mapping = match &input.remote {
+            Some(_) => &mut scratch,
+            None => self.surfaces.devices.entry(input.name.clone()).or_default(),
+        };
+        if let Some(device) = &input.remote {
+            hint(
+                ui,
+                format!(
+                    "Gerät der Netzwerk-Gegenstelle, nur anzeigen. Es spielt hier auf den MIDI-Port „{}“; \
+                     einstellen am Rechner, an dem es steckt.",
+                    crate::platform::device_port_name(device)
+                ),
+            );
+        } else {
+            changed |= ui.checkbox(&mut mapping.enabled, "Umbelegen und weiterleiten").changed();
+        }
+        let local = input.remote.is_none();
+        if local && mapping.enabled {
             ui.horizontal(|ui| {
                 ui.label("Ziel");
                 changed |= ui.selectable_value(&mut mapping.target, MidiTarget::Local, "Dieser Rechner").changed();
@@ -106,7 +123,7 @@ impl App {
                     },
                 );
             }
-        } else {
+        } else if local {
             hint(ui, "Nur anzeigen. Andere Programme können das Gerät gleichzeitig direkt benutzen.");
         }
         ui.add_space(8.0);
@@ -137,7 +154,7 @@ impl App {
                 ui.add_space(12.0);
             }
         }
-        if changed {
+        if changed && input.remote.is_none() {
             self.handle.send(Command::SetSurfaces(self.surfaces.clone()));
         }
         if !beside {

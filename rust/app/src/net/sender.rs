@@ -109,6 +109,13 @@ impl Link {
         }
     }
 
+    /// What the device sent, for the peer's live view; once (a lost value heals with the next).
+    pub fn send_device_raw(&self, slot: u8, messages: &[Vec<u8>]) {
+        for payload in protocol::midi_payloads(messages) {
+            self.send(Kind::DeviceRaw, slot, payload, 1);
+        }
+    }
+
     pub fn send_device_name(&self, slot: u8, name: &str) {
         for payload in protocol::name_payloads(name) {
             self.send(Kind::DeviceName, slot, payload, 1);

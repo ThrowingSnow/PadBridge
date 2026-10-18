@@ -26,6 +26,8 @@
 //!   surface); the pad byte is the device slot. Sent twice.
 //! - Device name: names a slot, repeated every second. Byte 0 = chunk index
 //!   (low nibble) and chunk count (high nibble), then 15 bytes of UTF-8 name.
+//! - Device raw: like device MIDI, but what the device itself sent, for a live
+//!   view on the peer. The slot `F0 77 tt` means: template changed to `tt`.
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -55,6 +57,7 @@ pub enum Kind {
     Input = 5,
     DeviceMidi = 6,
     DeviceName = 7,
+    DeviceRaw = 8,
     // Receiver -> sender.
     Pong = 0x81,
     Rumble = 0x82,
@@ -71,6 +74,7 @@ impl Kind {
             5 => Kind::Input,
             6 => Kind::DeviceMidi,
             7 => Kind::DeviceName,
+            8 => Kind::DeviceRaw,
             0x81 => Kind::Pong,
             0x82 => Kind::Rumble,
             0x84 => Kind::MidiIn,
@@ -240,6 +244,18 @@ pub fn midi_payloads(messages: &[Vec<u8>]) -> Vec<[u8; 16]> {
 }
 
 // MARK: Device name
+
+/// Stand-in for a template change (SysEx) in the device raw stream.
+pub fn template_message(template: u8) -> Vec<u8> {
+    vec![0xF0, 0x77, template]
+}
+
+pub fn template_of(message: &[u8]) -> Option<u8> {
+    match message {
+        [0xF0, 0x77, t] => Some(*t),
+        _ => None,
+    }
+}
 
 const NAME_CHUNK: usize = 15;
 /// Longest device name sent (4 chunks; the count must fit a nibble).

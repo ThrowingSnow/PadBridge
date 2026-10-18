@@ -26,6 +26,8 @@ versioned separately by its magic (`PBG1` = protocol v1).
   "PadBridge <device>" (macOS: virtual source; Linux: sequencer port, linked
   to the next VirMIDI device, so load snd-virmidi with `midi_devs=4`).
   New packet types 6 (device MIDI) and 7 (device name); older peers ignore them.
+- The peer also gets the raw values (packet type 8) and lists the device in
+  its "MIDI-Geräte" tab as "<device> · Netzwerk", drawn live and read-only.
 
 ### Fixed
 - macOS: MIDI devices plugged in or out while the app runs now appear and
