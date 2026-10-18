@@ -28,6 +28,8 @@ pub enum Msg {
     Peer(u64, Packet),
     /// MIDI the receiver got from a peer, for the local port.
     NetMidiOut(Vec<u8>),
+    /// MIDI of one of the peer's MIDI devices, for that device's own port.
+    NetDeviceMidi(String, Vec<u8>),
     Log(String),
     Cmd(Command),
 }
@@ -166,6 +168,8 @@ pub struct Engine {
     surface_mappers: HashMap<String, SurfaceMapper>,
     /// Per LCXL: template and LED values last sent.
     leds_sent: HashMap<String, (u8, Vec<u8>)>,
+    /// Network slot of each device whose MIDI goes to the peer (stable while running).
+    device_slots: HashMap<String, u8>,
     device_out: Option<Box<dyn DeviceOut>>,
     midi_port: Option<Box<dyn MidiPort>>,
     keymouse_out: Option<Box<dyn KeyMouseOut>>,
@@ -239,6 +243,7 @@ impl Engine {
             surfaces,
             surface_mappers: HashMap::new(),
             leds_sent: HashMap::new(),
+            device_slots: HashMap::new(),
             device_out: None,
             midi_port: None,
             keymouse_out: None,
@@ -381,6 +386,11 @@ impl Engine {
                     port.send(&bytes);
                 }
             }
+            Msg::NetDeviceMidi(device, bytes) => {
+                if let Some(port) = &self.midi_port {
+                    port.send_device(&device, &bytes);
+                }
+            }
             Msg::Log(line) => self.log(line),
             Msg::Cmd(cmd) => self.command(cmd),
         }
@@ -470,9 +480,29 @@ impl Engine {
         }
         if let Some(mapping) = self.surfaces.devices.get(name).filter(|m| m.enabled) {
             let out = self.surface_mappers.entry(name.to_string()).or_default().process(mapping, bytes);
-            if let Some(port) = &self.midi_port {
-                for m in &out {
-                    port.send(m);
+            match mapping.target {
+                MidiTarget::Local => {
+                    if let Some(port) = &self.midi_port {
+                        for m in &out {
+                            port.send(m);
+                        }
+                    }
+                }
+                MidiTarget::Network => {
+                    let slots = self.device_slots.len() as u8;
+                    let (slot, new) = match self.device_slots.get(name) {
+                        Some(&slot) => (slot, false),
+                        None => {
+                            self.device_slots.insert(name.to_string(), slots);
+                            (slots, true)
+                        }
+                    };
+                    if let Some(link) = &self.link {
+                        if new {
+                            link.send_device_name(slot, name);
+                        }
+                        link.send_device_midi(slot, &out);
+                    }
                 }
             }
         }
@@ -605,6 +635,7 @@ impl Engine {
                 for name in names {
                     self.update_leds(&name);
                 }
+                self.reconcile_link();
             }
             Command::Rumble { id, low, high } => {
                 if let Some(dev) = self.devices.get_mut(&id) {
@@ -733,6 +764,7 @@ impl Engine {
         self.net.enabled
             || (self.midi.enabled && self.midi.target == MidiTarget::Network)
             || (self.keymouse.enabled && self.keymouse.target == EmulationTarget::Network)
+            || self.surfaces.devices.values().any(|m| m.enabled && m.target == MidiTarget::Network)
     }
 
     fn reconcile_link(&mut self) {
@@ -894,6 +926,10 @@ impl Engine {
                 }
                 if self.link_ticks.is_multiple_of(10) {
                     link.send_ping();
+                    // Names now and then, so a peer started later still gets its ports.
+                    for (name, &slot) in &self.device_slots {
+                        link.send_device_name(slot, name);
+                    }
                     self.changed = true;
                 }
             }

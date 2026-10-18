@@ -2,15 +2,19 @@
 //! destination (DAW -> us, e.g. clock). Uses the MIDI 1.0 packet API, which
 //! exists on 10.13 (the MIDIEventList API needs macOS 11).
 
+use std::collections::HashMap;
 use std::io;
+use std::sync::Mutex;
 
 use coremidi::{Client, PacketBuffer, PacketList, VirtualDestination, VirtualSource};
 use padbridge_core::protocol::midi_len;
 
 pub struct CoreMidiPort {
     // Kept alive for as long as the ports exist.
-    _client: Client,
+    client: Client,
     source: VirtualSource,
+    /// Extra sources for the peer's MIDI devices; None if creating one failed.
+    devices: Mutex<HashMap<String, Option<VirtualSource>>>,
     _destination: VirtualDestination,
 }
 
@@ -31,13 +35,23 @@ impl CoreMidiPort {
                 }
             })
             .map_err(|s| err("MIDI-Ziel", s))?;
-        Ok(CoreMidiPort { _client: client, source, _destination: destination })
+        Ok(CoreMidiPort { client, source, devices: Mutex::default(), _destination: destination })
     }
 }
 
 impl crate::platform::MidiPort for CoreMidiPort {
     fn send(&self, message: &[u8]) {
         let _ = self.source.received(&PacketBuffer::new(0, message));
+    }
+
+    fn send_device(&self, device: &str, message: &[u8]) {
+        let mut devices = self.devices.lock().unwrap();
+        let source = devices
+            .entry(device.to_string())
+            .or_insert_with(|| self.client.virtual_source(&crate::platform::device_port_name(device)).ok());
+        if let Some(source) = source {
+            let _ = source.received(&PacketBuffer::new(0, message));
+        }
     }
 }
 

@@ -130,6 +130,9 @@ struct Loop {
     newest_seq: u64,
     peer: Option<SocketAddr>,
     midi_packets: u64,
+    /// MIDI devices of the peer by slot, and their names being assembled.
+    devices: HashMap<u8, String>,
+    device_names: HashMap<u8, protocol::NameAssembler>,
 }
 
 impl Loop {
@@ -153,6 +156,8 @@ impl Loop {
             newest_seq: 0,
             peer: None,
             midi_packets: 0,
+            devices: HashMap::new(),
+            device_names: HashMap::new(),
         }
     }
 
@@ -176,7 +181,8 @@ impl Loop {
                     continue;
                 }
                 let Some(packet) = protocol::decode(&self.key.0, &buf[..len]) else { continue };
-                if !self.fresh(from, packet.seq) || packet.pad >= MAX_PADS {
+                let device = matches!(packet.kind, Kind::DeviceMidi | Kind::DeviceName);
+                if !self.fresh(from, packet.seq) || (!device && packet.pad >= MAX_PADS) {
                     continue;
                 }
                 if self.peer != Some(from) {
@@ -269,6 +275,24 @@ impl Loop {
                 self.midi_packets += 1;
                 for message in protocol::midi_messages(&packet.payload) {
                     let _ = self.events.send(Msg::NetMidiOut(message));
+                }
+            }
+            Kind::DeviceName => {
+                let assembler = self.device_names.entry(packet.pad).or_default();
+                if let Some(name) = assembler.add(&packet.payload) {
+                    if self.devices.get(&packet.pad) != Some(&name) {
+                        self.log(format!("Netzwerk: MIDI-Gerät „{name}“ der Gegenstelle"));
+                        self.devices.insert(packet.pad, name);
+                    }
+                }
+            }
+            Kind::DeviceMidi => {
+                // Without a name yet there is no port to play it to; the name follows within a second.
+                if let Some(name) = self.devices.get(&packet.pad) {
+                    self.midi_packets += 1;
+                    for message in protocol::midi_messages(&packet.payload) {
+                        let _ = self.events.send(Msg::NetDeviceMidi(name.clone(), message));
+                    }
                 }
             }
             Kind::Bye => {

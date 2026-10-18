@@ -389,7 +389,7 @@ mod tests {
     fn toggled_button_lights() {
         let m = Model::LaunchControlXl;
         let ctl = m.controls().into_iter().find(|c| c.name == "Track Focus 1").unwrap();
-        let mut mapping = DeviceMapping { enabled: true, bindings: Vec::new() };
+        let mut mapping = DeviceMapping { enabled: true, ..Default::default() };
         let b = mapping.binding_mut(ctl.input(8), true);
         b.mode = ButtonMode::Toggle;
         b.led = LedColour::Green;

@@ -108,3 +108,16 @@ fn key_parsing() {
     assert_eq!(NetKey::parse(&"07".repeat(32)).unwrap().0, KEY);
     assert_eq!(format!("{:?}", NetKey(KEY)), "NetKey(…)", "Debug never prints the secret");
 }
+
+#[test]
+fn device_names_survive_chunking_in_any_order() {
+    for name in ["", "MIDI Mix", "Launch Control XL", "Elektron Digitakt II — Spur ü"] {
+        let mut payloads = name_payloads(name);
+        payloads.reverse();
+        let mut names = NameAssembler::default();
+        let got = payloads.iter().filter_map(|p| names.add(p)).last();
+        assert_eq!(got.as_deref(), (!name.is_empty()).then_some(name), "{name}");
+    }
+    let long = "x".repeat(100);
+    assert_eq!(name_payloads(&long).len(), 4);
+}

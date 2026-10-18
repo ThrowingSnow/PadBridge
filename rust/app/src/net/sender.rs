@@ -102,6 +102,19 @@ impl Link {
         }
     }
 
+    /// MIDI of one device (slot) for its own port on the peer; twice, like MIDI.
+    pub fn send_device_midi(&self, slot: u8, messages: &[Vec<u8>]) {
+        for payload in protocol::midi_payloads(messages) {
+            self.send(Kind::DeviceMidi, slot, payload, 2);
+        }
+    }
+
+    pub fn send_device_name(&self, slot: u8, name: &str) {
+        for payload in protocol::name_payloads(name) {
+            self.send(Kind::DeviceName, slot, payload, 1);
+        }
+    }
+
     /// Twice, like MIDI: a lost key-up would leave a key stuck. Empty = keepalive.
     pub fn send_input(&self, events: &[WireInput]) {
         for payload in protocol::input_payloads(events) {

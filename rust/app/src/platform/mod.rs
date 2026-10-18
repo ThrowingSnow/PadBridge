@@ -53,6 +53,14 @@ pub trait PadOutput: Send {
 /// The virtual MIDI port "PadBridge" on this machine.
 pub trait MidiPort: Send {
     fn send(&self, message: &[u8]);
+    /// Plays to an extra port for one device of the peer, created on first use
+    /// and named "PadBridge <device>".
+    fn send_device(&self, device: &str, message: &[u8]);
+}
+
+/// Name of the extra port for a peer's MIDI device.
+pub fn device_port_name(device: &str) -> String {
+    format!("PadBridge {device}")
 }
 
 /// Sends to external MIDI devices by name (e.g. LEDs of a control surface).

@@ -22,6 +22,10 @@
 //!   three 5-byte events (type u8, a i16, b i16), see `WireInput`. Sent twice.
 //! - Rumble: heavy motor, light motor (0..=255), repeated every 200 ms while
 //!   non-zero; the receiver stops the motors after 500 ms of silence.
+//! - Device MIDI: like MIDI, from one MIDI device of the sender (control
+//!   surface); the pad byte is the device slot. Sent twice.
+//! - Device name: names a slot, repeated every second. Byte 0 = chunk index
+//!   (low nibble) and chunk count (high nibble), then 15 bytes of UTF-8 name.
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -49,6 +53,8 @@ pub enum Kind {
     Bye = 3,
     Midi = 4,
     Input = 5,
+    DeviceMidi = 6,
+    DeviceName = 7,
     // Receiver -> sender.
     Pong = 0x81,
     Rumble = 0x82,
@@ -63,6 +69,8 @@ impl Kind {
             3 => Kind::Bye,
             4 => Kind::Midi,
             5 => Kind::Input,
+            6 => Kind::DeviceMidi,
+            7 => Kind::DeviceName,
             0x81 => Kind::Pong,
             0x82 => Kind::Rumble,
             0x84 => Kind::MidiIn,
@@ -229,6 +237,60 @@ pub fn midi_messages(p: &[u8; 16]) -> Vec<Vec<u8>> {
 /// Messages -> as many payloads as needed, five messages each.
 pub fn midi_payloads(messages: &[Vec<u8>]) -> Vec<[u8; 16]> {
     messages.chunks(MIDI_PER_PACKET).map(midi_payload).collect()
+}
+
+// MARK: Device name
+
+const NAME_CHUNK: usize = 15;
+/// Longest device name sent (4 chunks; the count must fit a nibble).
+pub const NAME_MAX: usize = 4 * NAME_CHUNK;
+
+/// A device name -> chunk payloads (cut at a char boundary to `NAME_MAX` bytes).
+pub fn name_payloads(name: &str) -> Vec<[u8; 16]> {
+    let mut end = name.len().min(NAME_MAX);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    let bytes = &name.as_bytes()[..end];
+    let chunks: Vec<&[u8]> = if bytes.is_empty() { vec![&[]] } else { bytes.chunks(NAME_CHUNK).collect() };
+    let count = chunks.len() as u8;
+    chunks
+        .iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let mut p = [0u8; 16];
+            p[0] = i as u8 | count << 4;
+            p[1..1 + chunk.len()].copy_from_slice(chunk);
+            p
+        })
+        .collect()
+}
+
+/// Collects name chunks; `add` returns the full name once all chunks are in.
+#[derive(Debug, Default, Clone)]
+pub struct NameAssembler {
+    chunks: Vec<Option<Vec<u8>>>,
+}
+
+impl NameAssembler {
+    pub fn add(&mut self, p: &[u8; 16]) -> Option<String> {
+        let (index, count) = ((p[0] & 0x0F) as usize, (p[0] >> 4) as usize);
+        if count == 0 || index >= count {
+            return None;
+        }
+        if self.chunks.len() != count {
+            self.chunks = vec![None; count];
+        }
+        let text = &p[1..];
+        let len = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+        self.chunks[index] = Some(text[..len].to_vec());
+        if self.chunks.iter().any(Option::is_none) {
+            return None;
+        }
+        let bytes: Vec<u8> = self.chunks.iter().flatten().flatten().copied().collect();
+        self.chunks.clear();
+        String::from_utf8(bytes).ok().filter(|s| !s.is_empty())
+    }
 }
 
 // MARK: Input

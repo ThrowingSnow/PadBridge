@@ -15,7 +15,7 @@ use padbridge_core::midi::models::{Ctl, CtlKind, Model};
 use padbridge_core::midi::surface::{
     meter_colour, DeviceMapping, LedColour, LedMode, SurfaceBinding, SurfaceKey, SurfaceKind, SurfaceState,
 };
-use padbridge_core::midi::{ButtonMode, MidiMessageKind};
+use padbridge_core::midi::{ButtonMode, MidiMessageKind, MidiTarget};
 
 use super::{hint, App, ORANGE};
 use crate::engine::{Command, MidiInputView};
@@ -71,12 +71,30 @@ impl App {
 
         let mut changed = false;
         let mapping = self.surfaces.devices.entry(input.name.clone()).or_default();
-        changed |= ui.checkbox(&mut mapping.enabled, "Umbelegen und an „PadBridge“ senden").changed();
+        changed |= ui.checkbox(&mut mapping.enabled, "Umbelegen und weiterleiten").changed();
         if mapping.enabled {
-            hint(
-                ui,
-                "Im Programm (Bitwig, KodeLife…) den Port „PadBridge“ statt des Geräts verwenden, sonst kommt alles doppelt.",
-            );
+            ui.horizontal(|ui| {
+                ui.label("Ziel");
+                changed |= ui.selectable_value(&mut mapping.target, MidiTarget::Local, "Dieser Rechner").changed();
+                changed |=
+                    ui.selectable_value(&mut mapping.target, MidiTarget::Network, "Netzwerk-Gegenstelle").changed();
+            });
+            match mapping.target {
+                MidiTarget::Local => hint(
+                    ui,
+                    "Im Programm (Bitwig, KodeLife…) den Port „PadBridge“ statt des Geräts verwenden, sonst kommt alles doppelt.",
+                ),
+                MidiTarget::Network => {
+                    let port = crate::platform::device_port_name(&input.name);
+                    hint(
+                        ui,
+                        &format!(
+                            "Geht an den Host aus dem Netzwerk-Tab. Dort erscheint der MIDI-Port „{port}“ \
+                             (Linux: über die nächste VirMIDI, dafür snd-virmidi mit midi_devs=4 laden)."
+                        ),
+                    );
+                }
+            }
             if model.is_some() {
                 let per_template = model.is_some_and(|m| m.template_name(0).is_some());
                 hint(

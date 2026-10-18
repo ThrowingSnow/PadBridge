@@ -21,6 +21,11 @@ versioned separately by its magic (`PBG1` = protocol v1).
   last parameter turned (SRC, FLTR, AMP, FX), encoders A-H and the track
   level move along, trig keys light per track (and per key pressed, via the
   auto channel), muted tracks are marked.
+- MIDI devices over the network: per device, the remapped MIDI can go to
+  the peer instead, which plays it to a port of its own named
+  "PadBridge <device>" (macOS: virtual source; Linux: sequencer port, linked
+  to the next VirMIDI device, so load snd-virmidi with `midi_devs=4`).
+  New packet types 6 (device MIDI) and 7 (device name); older peers ignore them.
 
 ### Fixed
 - macOS: MIDI devices plugged in or out while the app runs now appear and

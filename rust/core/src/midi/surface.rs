@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::{ButtonMode, MidiMessageKind};
+use super::{ButtonMode, MidiMessageKind, MidiTarget};
 
 /// Splits a MIDI byte stream into complete messages, SysEx included.
 /// Handles running status and real-time bytes in the middle of a message.
@@ -255,6 +255,8 @@ impl SurfaceBinding {
 pub struct DeviceMapping {
     /// Remap and send to the "PadBridge" port.
     pub enabled: bool,
+    /// This machine's "PadBridge" port, or a port named after the device on the peer.
+    pub target: MidiTarget,
     pub bindings: Vec<SurfaceBinding>,
 }
 
@@ -385,7 +387,7 @@ mod tests {
 
     #[test]
     fn remaps_knobs_and_toggles_buttons() {
-        let mut m = DeviceMapping { enabled: true, bindings: Vec::new() };
+        let mut m = DeviceMapping { enabled: true, ..Default::default() };
         let knob = SurfaceKey::cc(8, 13);
         let b = m.binding_mut(knob, false);
         b.number = 20;
