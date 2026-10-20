@@ -3,6 +3,7 @@
 //! read like the wired 360 report. The Guide button is only in the
 //! undocumented XInputGetStateEx (ordinal 100 of xinput1_4.dll); without it
 //! everything else still works. Windows drives the ring LEDs itself.
+//! Our own virtual pads (vigem_pad) show up here too and are skipped.
 
 use std::time::{Duration, Instant};
 
@@ -14,6 +15,7 @@ use windows_sys::Win32::UI::Input::XboxController::{
     XInputGetState, XInputSetState, XINPUT_GAMEPAD, XINPUT_STATE, XINPUT_VIBRATION, XUSER_MAX_COUNT,
 };
 
+use super::vigem_pad;
 use crate::platform::{Event, PadOutput};
 
 const POLL: Duration = Duration::from_millis(4);
@@ -64,10 +66,16 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + 'static) {
                 }
                 for slot in 0..XUSER_MAX_COUNT {
                     let held = &mut sent[slot as usize];
-                    if held.is_none() && !scan {
+                    let id = format!("xinput-{slot}");
+                    if vigem_pad::is_virtual(slot) {
+                        if held.take().is_some() && !sink(Event::PadGone(id)) {
+                            return;
+                        }
                         continue;
                     }
-                    let id = format!("xinput-{slot}");
+                    if held.is_none() && (!scan || vigem_pad::plugging()) {
+                        continue;
+                    }
                     match (read(slot), held.is_some()) {
                         (Some(pad), _) => {
                             if held.is_none() && !sink(Event::PadConnected(info(slot, &id), Box::new(Output(slot)))) {

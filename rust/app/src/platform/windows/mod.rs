@@ -2,12 +2,13 @@
 //! SendInput, MIDI devices via WinMM (midir).
 //!
 //! Windows has no virtual MIDI ports without a driver, so the "PadBridge"
-//! port is one the user creates in loopMIDI (see midi_port). A virtual game
-//! pad needs ViGEmBus and is not there yet.
+//! port is one the user creates in loopMIDI (see midi_port). A peer's pad
+//! becomes a virtual Xbox 360 controller through the ViGEmBus driver.
 
 mod midi_devices;
 mod midi_port;
 mod send_input;
+mod vigem_pad;
 mod xinput_pads;
 
 use std::io;
@@ -37,10 +38,7 @@ pub fn open_keymouse() -> io::Result<Box<dyn KeyMouseOut>> {
 }
 
 pub fn create_virtual_pad() -> io::Result<Box<dyn VirtualPad>> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "virtuelles Gamepad unter Windows braucht ViGEmBus (kommt noch; MIDI und Tastatur/Maus gehen)",
-    ))
+    Ok(Box::new(vigem_pad::VigemPad::create()?))
 }
 
 pub fn create_virtual_keymouse() -> io::Result<Box<dyn VirtualKeyMouse>> {

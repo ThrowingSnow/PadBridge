@@ -26,6 +26,7 @@ rusb = { version = "0.9.4", features = ["vendored"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
 midir = "0.10"
+vigem-client = { version = "0.1.4", features = ["unstable_xtarget_notification"] }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_LibraryLoader",
