@@ -4,6 +4,7 @@
 
 use std::collections::HashSet;
 use std::ffi::CString;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -59,7 +60,7 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) {
                         buttons: PadButton::ALL.to_vec(),
                         axes: PadAxis::ALL.to_vec(),
                     };
-                    let device = Arc::new(Mutex::new(device));
+                    let device = Arc::new(Shared { device: Mutex::new(device), writers: AtomicUsize::new(0) });
                     let mut output = Output {
                         device: device.clone(),
                         bluetooth,
@@ -88,18 +89,21 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) {
         .expect("hid scan thread");
 }
 
-fn read_loop(device: &Mutex<HidDevice>, id: &str, sink: &impl Fn(Event) -> bool) {
+fn read_loop(shared: &Shared, id: &str, sink: &impl Fn(Event) -> bool) {
     let mut buf = [0u8; 128];
     let mut sent = ControllerState::default();
     sink(Event::PadState(id.to_string(), sent));
     loop {
-        let n = match device.lock().unwrap().read_timeout(&mut buf, READ_TIMEOUT_MS) {
+        // A pad reports every few ms, so without this the lock goes straight back
+        // to this loop and a writer can wait for seconds (seen on Windows).
+        while shared.writers.load(Ordering::Acquire) > 0 {
+            std::thread::yield_now();
+        }
+        let n = match shared.device.lock().unwrap().read_timeout(&mut buf, READ_TIMEOUT_MS) {
             Ok(n) => n,
             Err(_) => return, // unplugged
         };
         if n == 0 {
-            // Let a waiting writer take the lock.
-            std::thread::yield_now();
             continue;
         }
         if let Some(state) = ds4::parse_input(&buf[..n]) {
@@ -113,9 +117,16 @@ fn read_loop(device: &Mutex<HidDevice>, id: &str, sink: &impl Fn(Event) -> bool)
     }
 }
 
+/// One pad, read by its thread and written by the engine.
+struct Shared {
+    device: Mutex<HidDevice>,
+    /// Writers waiting for or holding the lock; the reader steps aside for them.
+    writers: AtomicUsize,
+}
+
 /// Rumble and light bar share one report, so the last values of both are kept.
 struct Output {
-    device: Arc<Mutex<HidDevice>>,
+    device: Arc<Shared>,
     bluetooth: bool,
     low: f32,
     high: f32,
@@ -125,7 +136,9 @@ struct Output {
 impl Output {
     fn send(&mut self) {
         let report = ds4::output_report(self.bluetooth, self.low, self.high, self.bar);
-        let _ = self.device.lock().unwrap().write(&report);
+        self.device.writers.fetch_add(1, Ordering::AcqRel);
+        let _ = self.device.device.lock().unwrap().write(&report);
+        self.device.writers.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
