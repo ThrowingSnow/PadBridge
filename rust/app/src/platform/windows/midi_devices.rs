@@ -4,6 +4,8 @@
 //! WinMM lets only one app open a device at a time (Windows MIDI Services on
 //! Windows 11 lifts that), so while PadBridge listens to a device, a DAW cannot
 //! open the same one. Outputs (LEDs) are opened only once something is sent.
+//! A device another app holds is tried again every few seconds, so it shows
+//! up once that app lets go of it.
 //!
 //! WinMM sends no hotplug notices; the device list is read again every two
 //! seconds. The same thread sends to devices.
@@ -18,6 +20,8 @@ use super::is_ours;
 use crate::platform::{ChannelDeviceOut, Event};
 
 const RESCAN: Duration = Duration::from_secs(2);
+/// How often a device that would not open is tried again.
+const RETRY: Duration = Duration::from_secs(6);
 
 pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) -> ChannelDeviceOut {
     let (tx, outgoing) = channel::<(String, Vec<u8>)>();
@@ -25,27 +29,32 @@ pub fn start(sink: impl Fn(Event) -> bool + Send + Clone + 'static) -> ChannelDe
         // shown name -> connection
         let mut open: BTreeMap<String, MidiInputConnection<()>> = BTreeMap::new();
         let mut outputs: BTreeMap<String, Option<MidiOutputConnection>> = BTreeMap::new();
-        // Names that failed to open, not retried until they are unplugged.
-        let mut failed: Vec<String> = Vec::new();
+        // Names that failed to open -> when they were last tried.
+        let mut failed: BTreeMap<String, Instant> = BTreeMap::new();
         let mut reported: Option<Vec<String>> = None;
         loop {
             let present = input_names();
             open.retain(|name, _| present.contains(name));
             outputs.retain(|name, _| present.contains(name));
-            failed.retain(|name| present.contains(name));
+            failed.retain(|name, _| present.contains(name));
             for (index, name) in present.iter().enumerate() {
-                if name.is_empty() || open.contains_key(name) || failed.contains(name) {
+                let retry_later = failed.get(name).is_some_and(|tried| tried.elapsed() < RETRY);
+                if name.is_empty() || open.contains_key(name) || retry_later {
                     continue;
                 }
                 match connect_in(index, name, sink.clone()) {
                     Some(connection) => {
+                        failed.remove(name);
                         open.insert(name.clone(), connection);
                     }
+                    // Reported once, then retried quietly.
                     None => {
-                        failed.push(name.clone());
-                        sink(Event::Error(format!(
-                            "MIDI-Gerät „{name}“ lässt sich nicht öffnen (von einem anderen Programm belegt?)"
-                        )));
+                        if failed.insert(name.clone(), Instant::now()).is_none() {
+                            sink(Event::Error(format!(
+                                "MIDI-Gerät „{name}“ ist von einem anderen Programm belegt (z. B. DAW, MadMapper); \
+                                 PadBridge übernimmt es, sobald es frei wird"
+                            )));
+                        }
                     }
                 }
             }
