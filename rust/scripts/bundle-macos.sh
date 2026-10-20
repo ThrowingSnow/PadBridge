@@ -10,6 +10,8 @@ VERSION="${VERSION:-$(cargo metadata --no-deps --format-version 1 | sed -n 's/.*
 BUILD="$(git rev-list --count HEAD)"
 
 export MACOSX_DEPLOYMENT_TARGET=10.13
+# Keep the home directory (user name) out of paths compiled into the binary.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME=~"
 cargo build --release -p padbridge
 
 APP=target/PadBridge.app
