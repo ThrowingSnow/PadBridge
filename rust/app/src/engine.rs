@@ -4,6 +4,8 @@
 //! frame can never delay input, and headless mode is simply "no UI".
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::mpsc::{channel, Receiver as ChannelRx, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -39,6 +41,10 @@ pub enum Msg {
     PeerPad(u8, ControllerState),
     /// The peer let go of that pad.
     PeerPadGone(u8),
+    /// Service: a window on this machine takes over receiving; answer on the stream once free.
+    HandoverStart(TcpStream),
+    /// Service: that window closed, receive again.
+    HandoverEnd,
     Log(String),
     Cmd(Command),
 }
@@ -134,6 +140,8 @@ pub struct Snapshot {
     pub net: NetSettings,
     pub surfaces: SurfaceMapping,
     pub listen_forced: bool,
+    /// This window receives in place of the background service.
+    pub took_over: bool,
     pub web: WebSettings,
     /// The status page's address in the home network while it runs.
     pub web_url: Option<String>,
@@ -154,6 +162,36 @@ impl Handle {
 
     pub fn snapshot(&self) -> Snapshot {
         self.shared.lock().unwrap().clone()
+    }
+}
+
+/// Service: accepts one window at a time on localhost (TCP, same number as
+/// the UDP port) and hands receiving over to it until its connection closes.
+fn listen_for_window(port: u16, tx: Sender<Msg>) {
+    let listener = match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(l) => l,
+        Err(e) => {
+            let _ = tx.send(Msg::Log(format!("Netzwerk: keine Übergabe an ein Fenster möglich ({e})")));
+            return;
+        }
+    };
+    let spawned = std::thread::Builder::new().name("handover".into()).spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let Ok(answer) = stream.try_clone() else { continue };
+            if tx.send(Msg::HandoverStart(answer)).is_err() {
+                return;
+            }
+            // The window never sends; this returns when it closes.
+            let mut buf = [0u8; 16];
+            while matches!(stream.read(&mut buf), Ok(n) if n > 0) {}
+            if tx.send(Msg::HandoverEnd).is_err() {
+                return;
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        eprintln!("padbridge: handover thread: {e}");
     }
 }
 
@@ -198,6 +236,8 @@ const LINK_RETRY: Duration = Duration::from_secs(3);
 const RUMBLE_TIMEOUT: Duration = Duration::from_millis(500);
 const SAVE_DELAY: Duration = Duration::from_millis(500);
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(16);
+/// How often a receiver whose port was taken tries again.
+const RECEIVER_RETRY: Duration = Duration::from_secs(2);
 /// A peer's pad without packets for this long is released (its notes end).
 const PEER_PAD_SILENCE: Duration = Duration::from_millis(500);
 /// ... and dropped from the monitor after this long.
@@ -212,6 +252,9 @@ pub struct Options {
     /// For the background service, so a window opened next to it is the only
     /// one reading the local pads (no doubled MIDI).
     pub receive_only: bool,
+    /// Running without a window (`--headless`): a window opened later may take
+    /// over receiving (see `listen_for_window`).
+    pub service: bool,
 }
 
 pub struct Engine {
@@ -245,6 +288,13 @@ pub struct Engine {
     receiver: Option<Receiver>,
     receiver_error: Option<String>,
     listen_forced: bool,
+    service: bool,
+    /// Service: a window receives in its place right now.
+    handed_over: bool,
+    /// Window: the connection to the service whose receiving it took over;
+    /// closing it (also by quitting or crashing) hands receiving back.
+    took_over: Option<TcpStream>,
+    receiver_retry_at: Option<Instant>,
     receive_only: bool,
     clock: MidiClockTracker,
     clock_status: ClockStatus,
@@ -272,6 +322,7 @@ impl Engine {
     /// Starts the engine thread and returns its handle.
     pub fn spawn(options: Options) -> Handle {
         let listen_forced = options.listen_forced;
+        let service = options.service;
         let (tx, rx) = channel();
         let dir = settings::config_dir();
         let midi: MidiMapping = settings::load(&dir, settings::MIDI_FILE);
@@ -296,6 +347,7 @@ impl Engine {
             net: net.clone(),
             surfaces: surfaces.clone(),
             listen_forced,
+            took_over: false,
             web: web.clone(),
             web_url: None,
             web_error: None,
@@ -330,6 +382,10 @@ impl Engine {
             receiver: None,
             receiver_error: None,
             listen_forced,
+            service,
+            handed_over: false,
+            took_over: None,
+            receiver_retry_at: None,
             receive_only: options.receive_only,
             clock: MidiClockTracker::new(),
             clock_status: ClockStatus::default(),
@@ -381,6 +437,11 @@ impl Engine {
             self.device_out = platform::start_midi_devices(&self.tx);
         }
         self.reconcile_link();
+        if self.service {
+            listen_for_window(self.net.port, self.tx.clone());
+        } else {
+            self.take_over_from_service();
+        }
         self.reconcile_receiver();
         self.reconcile_web();
 
@@ -484,6 +545,20 @@ impl Engine {
             }
             Msg::PeerPad(index, state) => self.peer_pad(index, state),
             Msg::PeerPadGone(index) => self.peer_pad_gone(index),
+            Msg::HandoverStart(mut stream) => {
+                self.handed_over = true;
+                self.receiver = None;
+                self.receiver_error = None;
+                self.log("Netzwerk: Ein Fenster auf diesem Rechner empfängt jetzt, der Dienst pausiert".into());
+                let _ = stream.write_all(b"1");
+                self.changed = true;
+            }
+            Msg::HandoverEnd => {
+                self.handed_over = false;
+                self.log("Netzwerk: Fenster geschlossen, der Dienst empfängt wieder".into());
+                self.reconcile_receiver();
+                self.changed = true;
+            }
             Msg::Log(line) => self.log(line),
             Msg::Cmd(cmd) => self.command(cmd),
         }
@@ -1040,8 +1115,22 @@ impl Engine {
         }
     }
 
+    /// Window: if a background service on this machine receives, ask it to
+    /// pause and receive here instead, with everything shown in the window.
+    fn take_over_from_service(&mut self) {
+        let addr = SocketAddr::from(([127, 0, 0, 1], self.net.port));
+        let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) else { return };
+        // The service answers once its socket and virtual pads are gone.
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+        let mut ack = [0u8; 1];
+        if stream.read_exact(&mut ack).is_ok() {
+            self.log("Netzwerk: Hintergrund-Dienst gefunden – dieses Fenster empfängt, solange es offen ist".into());
+            self.took_over = Some(stream);
+        }
+    }
+
     fn reconcile_receiver(&mut self) {
-        let wanted = self.net.listen || self.listen_forced;
+        let wanted = (self.net.listen || self.listen_forced || self.took_over.is_some()) && !self.handed_over;
         if !wanted {
             self.receiver = None;
             self.receiver_error = None;
@@ -1059,8 +1148,12 @@ impl Engine {
             }
             Err(e) => {
                 let msg = format!("Port {} nicht verfügbar: {e}", self.net.port);
-                self.log(format!("Netzwerk: {msg}"));
+                // Retried every few seconds (timers); say it once.
+                if self.receiver_error.as_ref() != Some(&msg) {
+                    self.log(format!("Netzwerk: {msg}"));
+                }
                 self.receiver_error = Some(msg);
+                self.receiver_retry_at = Some(Instant::now() + RECEIVER_RETRY);
             }
         }
     }
@@ -1104,6 +1197,14 @@ impl Engine {
 
     fn timers(&mut self) {
         let now = Instant::now();
+
+        // E.g. the port is still held by a window that just handed it back.
+        if self.receiver_retry_at.is_some_and(|t| now >= t) {
+            self.receiver_retry_at = None;
+            if self.receiver.is_none() {
+                self.reconcile_receiver();
+            }
+        }
 
         let gone: Vec<String> =
             self.remote_seen.iter().filter(|(_, t)| t.elapsed() > REMOTE_DEVICE_TIMEOUT).map(|(n, _)| n.clone()).collect();
@@ -1291,6 +1392,7 @@ impl Engine {
         s.link = link;
         s.receiver = receiver;
         s.log = self.log.clone();
+        s.took_over = self.took_over.is_some();
         s.midi = self.midi.clone();
         s.keymouse = self.keymouse.clone();
         s.net = self.net.clone();

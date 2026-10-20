@@ -40,6 +40,7 @@ fn main() {
         }
     }
 
+    options.service = headless;
     let handle = engine::Engine::spawn(options);
     if headless {
         // The engine thread does all the work; virtual devices vanish with the process.

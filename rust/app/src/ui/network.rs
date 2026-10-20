@@ -36,7 +36,7 @@ impl App {
         ui.add_space(8.0);
         ui.separator();
         ui.heading("Empfangen");
-        let forced = self.snap.listen_forced;
+        let forced = self.snap.listen_forced || self.snap.took_over;
         ui.add_enabled_ui(!forced, |ui| {
             changed |= ui
                 .checkbox(
@@ -45,7 +45,9 @@ impl App {
                 )
                 .changed();
         });
-        if forced {
+        if self.snap.took_over {
+            hint(ui, "Vom Hintergrund-Dienst übernommen, solange dieses Fenster offen ist; danach empfängt wieder der Dienst.");
+        } else if forced {
             hint(ui, "Per Startoption --listen eingeschaltet.");
         }
         self.receiver_status(ui);
