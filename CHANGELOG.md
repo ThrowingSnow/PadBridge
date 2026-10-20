@@ -6,6 +6,8 @@ versioned separately by its magic (`PBG1` = protocol v1).
 
 ## [Unreleased]
 
+## [0.5.0-beta.1] - 2026-10-20
+
 ### Added
 - Windows 10/11: Xbox pads via XInput (rumble; Guide button via
   XInputGetStateEx), DualShock 4 via HID (USB: buttons, sticks, rumble, light
