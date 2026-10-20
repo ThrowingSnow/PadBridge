@@ -1021,7 +1021,13 @@ impl Engine {
             self.save_now();
         }
 
-        if self.receiver.is_some() && now.duration_since(self.last_publish) > Duration::from_millis(200) {
+        // The peer's pads are shown live in the monitor.
+        let remote_live = self
+            .receiver
+            .as_ref()
+            .is_some_and(|r| r.status.lock().unwrap().remote_pads.iter().any(|(_, _, live)| *live));
+        let every = if remote_live { PUBLISH_INTERVAL } else { Duration::from_millis(200) };
+        if self.receiver.is_some() && now.duration_since(self.last_publish) > every {
             self.changed = true;
         }
         if self.changed && now.duration_since(self.last_publish) >= PUBLISH_INTERVAL {

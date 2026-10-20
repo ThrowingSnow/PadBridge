@@ -8,10 +8,30 @@ use crate::engine::Command;
 impl App {
     pub(super) fn monitor(&mut self, ui: &mut egui::Ui) {
         let devices = self.snap.devices.clone();
-        if self.selected.as_ref().is_none_or(|id| !devices.iter().any(|d| &d.info.id == id)) {
-            self.selected = devices.first().map(|d| d.info.id.clone());
+        let receiver = self.snap.receiver.clone().unwrap_or_default();
+        // Local pads first, then the peer's pads (shown only).
+        let mut choices: Vec<(String, String)> =
+            devices.iter().map(|d| (d.info.id.clone(), d.info.name.clone())).collect();
+        choices.extend(
+            receiver.remote_pads.iter().map(|(i, _, _)| (remote_id(*i), format!("Pad {} der Gegenstelle", i + 1))),
+        );
+        if self.selected.as_ref().is_none_or(|id| !choices.iter().any(|(c, _)| c == id)) {
+            self.selected = choices.first().map(|(id, _)| id.clone());
+        }
+        let remote = receiver.remote_pads.iter().find(|(i, _, _)| Some(remote_id(*i)) == self.selected);
+        if let Some((_, state, live)) = remote {
+            ui.horizontal(|ui| {
+                self.pad_picker(ui, &choices);
+                let from = receiver.peer.map_or(String::new(), |p| format!(" von {}", p.ip()));
+                let still = if *live { "" } else { " · still" };
+                hint(ui, format!("· Netzwerk{from} · nur Anzeige{still}"));
+            });
+            ui.add_space(8.0);
+            pad_view(ui, state);
+            hint(ui, "Rumble und LEDs stellt die Gegenstelle ein, an der der Pad hängt.");
         }
         match devices.iter().find(|d| Some(&d.info.id) == self.selected.as_ref()) {
+            None if remote.is_some() => {}
             None => {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
@@ -21,15 +41,7 @@ impl App {
             }
             Some(device) => {
                 ui.horizontal(|ui| {
-                    if devices.len() > 1 {
-                        egui::ComboBox::from_id_salt("device").selected_text(&device.info.name).show_ui(ui, |ui| {
-                            for d in &devices {
-                                ui.selectable_value(&mut self.selected, Some(d.info.id.clone()), &d.info.name);
-                            }
-                        });
-                    } else {
-                        ui.strong(&device.info.name);
-                    }
+                    self.pad_picker(ui, &choices);
                     hint(
                         ui,
                         format!(
@@ -76,6 +88,20 @@ impl App {
                 ui.monospace(line);
             }
         });
+    }
+
+    /// A choice of all pads when there are several, else just the name.
+    fn pad_picker(&mut self, ui: &mut egui::Ui, choices: &[(String, String)]) {
+        let name = choices.iter().find(|(id, _)| Some(id) == self.selected.as_ref()).map_or("", |(_, n)| n.as_str());
+        if choices.len() > 1 {
+            egui::ComboBox::from_id_salt("device").selected_text(name).show_ui(ui, |ui| {
+                for (id, n) in choices {
+                    ui.selectable_value(&mut self.selected, Some(id.clone()), n);
+                }
+            });
+        } else {
+            ui.strong(name);
+        }
     }
 
     fn ring_controls(&mut self, ui: &mut egui::Ui, available: bool) {
@@ -191,4 +217,9 @@ fn buttons(ui: &mut egui::Ui, s: &ControllerState, list: &[PadButton]) {
             );
         }
     });
+}
+
+/// Monitor id of the peer's pad `index` (local ids come from the backends).
+fn remote_id(index: u8) -> String {
+    format!("net-{index}")
 }

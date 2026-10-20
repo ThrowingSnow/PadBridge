@@ -6,7 +6,7 @@
 //! Runs on its own thread with poll(), so force-feedback uploads from games
 //! (which block the game until answered) get an answer within microseconds.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use padbridge_core::key::NetKey;
 use padbridge_core::protocol::{self, Kind, Packet, PACKET_LEN};
+use padbridge_core::ControllerState;
 
 use super::next_seq;
 use crate::engine::Msg;
@@ -42,6 +43,9 @@ pub struct ReceiverStatus {
     pub peer: Option<SocketAddr>,
     /// Virtual pads: (index, device description, receiving right now).
     pub pads: Vec<(u8, String, bool)>,
+    /// The peer's pads as last received, for the monitor: (index, state,
+    /// receiving right now). Also there when no virtual pad could be made.
+    pub remote_pads: Vec<(u8, ControllerState, bool)>,
     pub keymouse: bool,
     pub midi_packets: u64,
 }
@@ -123,6 +127,8 @@ struct Loop {
     status: Arc<Mutex<ReceiverStatus>>,
     events: EventSink,
     slots: HashMap<u8, Slot>,
+    /// Last state per pad index of the peer, and when it came.
+    remote: BTreeMap<u8, (ControllerState, Instant)>,
     keymouse: Option<Box<dyn VirtualKeyMouse>>,
     keymouse_last: Option<Instant>,
     last_seq: HashMap<SocketAddr, u64>,
@@ -149,6 +155,7 @@ impl Loop {
             status,
             events,
             slots: HashMap::new(),
+            remote: BTreeMap::new(),
             keymouse: None,
             keymouse_last: None,
             last_seq: HashMap::new(),
@@ -235,6 +242,8 @@ impl Loop {
     fn handle(&mut self, from: SocketAddr, packet: Packet) {
         match packet.kind {
             Kind::State => {
+                self.remote.insert(packet.pad, (protocol::state_from_payload(&packet.payload), Instant::now()));
+                self.publish_remote();
                 if !self.slots.contains_key(&packet.pad) {
                     match platform::create_virtual_pad() {
                         Ok(mut pad) => {
@@ -319,6 +328,8 @@ impl Loop {
                 }
             }
             Kind::Bye => {
+                self.remote.remove(&packet.pad);
+                self.publish_remote();
                 if let Some(slot) = self.slots.get_mut(&packet.pad) {
                     slot.idle = true;
                     let _ = slot.pad.neutral();
@@ -372,7 +383,7 @@ impl Loop {
         }
     }
 
-    fn publish(&self) {
+    fn publish(&mut self) {
         let mut s = self.status.lock().unwrap();
         s.peer = self.outbox.live_peer();
         let mut pads: Vec<_> = self.slots.iter().map(|(&i, slot)| (i, slot.name.clone(), !slot.idle)).collect();
@@ -380,5 +391,14 @@ impl Loop {
         s.pads = pads;
         s.keymouse = self.keymouse.is_some();
         s.midi_packets = self.midi_packets;
+        drop(s);
+        self.publish_remote();
+    }
+
+    /// Called for every pad packet, so the monitor follows the peer's pad live.
+    fn publish_remote(&mut self) {
+        self.remote.retain(|_, (_, at)| at.elapsed() <= PEER_TIMEOUT);
+        self.status.lock().unwrap().remote_pads =
+            self.remote.iter().map(|(&i, (state, at))| (i, *state, at.elapsed() <= SILENCE_TIMEOUT)).collect();
     }
 }
