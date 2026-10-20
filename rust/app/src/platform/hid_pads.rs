@@ -1,5 +1,6 @@
-//! HID game pads on macOS (DualShock 4, USB and Bluetooth) via hidapi
-//! (IOHIDManager underneath). The 360 pad is not HID; usb_pads covers it.
+//! HID game pads (DualShock 4, USB and Bluetooth) via hidapi, on macOS
+//! (IOHIDManager underneath) and Windows. The 360 pad is not HID; usb_pads
+//! (macOS) and xinput_pads (Windows) cover it.
 
 use std::collections::HashSet;
 use std::ffi::CString;

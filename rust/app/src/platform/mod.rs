@@ -3,6 +3,7 @@
 //!
 //! - Linux: evdev (pads via xpad), uinput (virtual pad, keyboard/mouse), ALSA.
 //! - macOS (10.13+): libusb (pads), CoreMIDI, CGEvent.
+//! - Windows: XInput and HID (pads), WinMM via midir, SendInput.
 //! - anything else: a stub that offers nothing, so the UI still builds.
 
 use std::io;
@@ -22,9 +23,17 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+pub use windows::*;
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod hid_pads;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod stub;
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 pub use stub::*;
 
 /// What platform code reports to the engine.

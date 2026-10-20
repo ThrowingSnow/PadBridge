@@ -22,3 +22,13 @@ core-graphics = { version = "0.23", features = ["highsierra"] }
 coremidi = "0.9.2"
 hidapi = "2.6"
 rusb = { version = "0.9.4", features = ["vendored"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+midir = "0.10"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Input_XboxController",
+] }

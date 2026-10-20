@@ -8,7 +8,6 @@
 mod cg_events;
 mod coremidi_devices;
 mod coremidi_port;
-mod hid_pads;
 mod usb_pads;
 
 use std::io;
@@ -17,7 +16,7 @@ use super::{EventSink, KeyMouseOut, MidiPort, VirtualKeyMouse, VirtualPad};
 
 pub fn start_pads(events: &EventSink) {
     usb_pads::start(super::sink(events));
-    hid_pads::start(super::sink(events));
+    super::hid_pads::start(super::sink(events));
 }
 
 /// Starts listening to the system's MIDI devices.
