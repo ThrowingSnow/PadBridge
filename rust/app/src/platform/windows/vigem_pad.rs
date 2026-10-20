@@ -90,7 +90,9 @@ impl VirtualPad for VigemPad {
             thumb_ry: state.ry,
         };
         match self.target.update(&gamepad) {
-            Ok(()) | Err(Error::TargetNotReady) => Ok(()),
+            // 259 (no more items): nobody reads the pad right now; the bus keeps
+            // the report anyway. The official ViGEmClient ignores it too.
+            Ok(()) | Err(Error::TargetNotReady) | Err(Error::WinError(259)) => Ok(()),
             Err(e) => Err(io::Error::other(format!("ViGEmBus: {e}"))),
         }
     }
