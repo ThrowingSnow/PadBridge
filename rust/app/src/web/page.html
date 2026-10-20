@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1b1b1b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>PadBridge</title>
+<style>
+  :root {
+    --bg: #1b1b1b; --card: #262626; --line: #3a3a3a; --text: #e6e6e6; --dim: #9a9a9a;
+    --accent: #2c7fb8; --green: #3cbe5a; --orange: #f09628; --red: #e0503c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: max(12px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 0 14px; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0; }
+  h1 small { color: var(--dim); font-size: 14px; margin-left: 6px; }
+  #conn { font-size: 12px; color: var(--dim); }
+  section { background: var(--card); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0 0 8px; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .row > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--dim); }
+  .dot.ok { background: var(--green); } .dot.warn { background: var(--orange); } .dot.err { background: var(--red); }
+  .dim { color: var(--dim); }
+  .pad { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+  .pad:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .padname { font-weight: 600; }
+  .tag { font-size: 11px; color: var(--dim); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; }
+  .sticks { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 8px; }
+  .stick { display: block; width: 100%; min-width: 0; max-width: 110px; aspect-ratio: 1; justify-self: center; }
+  .stick circle.ring { fill: none; stroke: var(--line); stroke-width: 2; }
+  .stick line { stroke: var(--line); stroke-width: 1; }
+  .stick circle.knob { fill: var(--text); }
+  .buttons { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; max-width: 140px; }
+  .btn { font-size: 11px; min-width: 26px; text-align: center; padding: 2px 5px; border-radius: 5px; background: #333; color: var(--dim); }
+  .btn.on { background: var(--accent); color: #fff; }
+  .trig { height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .trig div { height: 100%; background: var(--accent); width: 0; }
+  .trigs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--dim); }
+  #log { font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+  #login { display: none; }
+  #login input { font-size: 22px; letter-spacing: .3em; width: 9ch; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: #111; color: var(--text); text-align: center; }
+  #login button { font-size: 16px; padding: 8px 14px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; margin-left: 6px; }
+  #loginmsg { color: var(--orange); min-height: 1.4em; margin-top: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>PadBridge <small id="host"></small></h1>
+    <span id="conn">verbinde …</span>
+  </header>
+
+  <section id="login">
+    <h2>PIN</h2>
+    <p class="dim">Außerhalb vom Heimnetz braucht die Seite die PIN aus PadBridge (Tab Netzwerk).</p>
+    <form id="pinform">
+      <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" required>
+      <button type="submit">Öffnen</button>
+    </form>
+    <div id="loginmsg"></div>
+  </section>
+
+  <div id="status" hidden>
+    <section><h2>Pads</h2><div id="pads"></div></section>
+    <section><h2>Netzwerk</h2><div id="net"></div></section>
+    <section><h2>MIDI</h2><div id="midi"></div></section>
+    <section><h2>Protokoll</h2><div id="log"></div></section>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const row = (cls, html) => `<div class="row"><span class="dot ${cls}"></span><span>${html}</span></div>`;
+
+const XBOX = { A: "A", B: "B", X: "X", Y: "Y", LeftShoulder: "LB", RightShoulder: "RB", Back: "Back", Start: "Start", Guide: "Guide" };
+const DS4 = { A: "✕", B: "○", X: "□", Y: "△", LeftShoulder: "L1", RightShoulder: "R1", Back: "Share", Start: "Options", Guide: "PS" };
+const COMMON = { DpadUp: "▲", DpadDown: "▼", DpadLeft: "◀", DpadRight: "▶", LeftStick: "L3", RightStick: "R3" };
+const ORDER = ["DpadUp", "DpadDown", "DpadLeft", "DpadRight", "A", "B", "X", "Y", "LeftShoulder", "RightShoulder", "LeftStick", "RightStick", "Back", "Start", "Guide"];
+
+function stick(x, y) {
+  // Ours: up is positive; SVG grows downwards.
+  const cx = 50 + x * 38, cy = 50 - y * 38;
+  return `<svg class="stick" viewBox="0 0 100 100"><circle class="ring" cx="50" cy="50" r="46"/>
+    <line x1="4" y1="50" x2="96" y2="50"/><line x1="50" y1="4" x2="50" y2="96"/>
+    <circle class="knob" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="8"/></svg>`;
+}
+
+function pad(p) {
+  const names = { ...COMMON, ...(p.ds4 ? DS4 : XBOX) };
+  const on = new Set(p.pressed);
+  const buttons = ORDER.map((b) => `<span class="btn${on.has(b) ? " on" : ""}">${names[b]}</span>`).join("");
+  const tags = [];
+  if (p.peer) tags.push(p.live ? "Netzwerk" : "Netzwerk · still");
+  if (p.sentAs) tags.push(`im Netzwerk Pad ${p.sentAs}`);
+  const lt = p.ds4 ? "L2" : "LT", rt = p.ds4 ? "R2" : "RT";
+  return `<div class="pad">
+    <div class="row"><span class="padname">${esc(p.name)}</span>${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+    <div class="trigs"><div>${lt}<div class="trig"><div style="width:${p.lt * 100}%"></div></div></div>
+      <div>${rt}<div class="trig"><div style="width:${p.rt * 100}%"></div></div></div></div>
+    <div class="sticks">${stick(p.lx, p.ly)}<div class="buttons">${buttons}</div>${stick(p.rx, p.ry)}</div>
+  </div>`;
+}
+
+function render(s) {
+  $("host").textContent = `${s.host} · ${s.version}`;
+  $("pads").innerHTML = s.pads.length ? s.pads.map(pad).join("") : `<div class="dim">Kein Controller</div>`;
+
+  const net = [];
+  const l = s.link;
+  if (!l.active) net.push(l.error ? row("warn", esc(l.error)) : row("", "Senden aus"));
+  else if (l.answering) net.push(row("ok", `Verbunden mit ${esc(l.peer)}${l.latencyMs != null ? ` · ${l.latencyMs.toFixed(1)} ms` : ""}`));
+  else net.push(row("warn", `Sende an ${esc(l.peer)} – keine Antwort`));
+  const r = s.receiver;
+  if (!r) net.push(row("", "Empfangen aus"));
+  else {
+    if (r.error) net.push(row("warn", esc(r.error)));
+    if (r.listening) net.push(row(r.peer ? "ok" : "", r.peer ? `Empfange von ${esc(r.peer)}` : `Bereit auf Port ${r.listening}`));
+    for (const v of r.virtualPads) net.push(row(v.active ? "ok" : "", `Virtuelles Pad ${v.index} · ${esc(v.name)}`));
+  }
+  $("net").innerHTML = net.join("");
+
+  const m = s.midi, midi = [];
+  if (m.portError) midi.push(row("warn", `Port: ${esc(m.portError)}`));
+  midi.push(row(m.enabled ? "ok" : "", m.enabled ? `MIDI senden an ${m.target === "network" ? "Gegenstelle" : "diesen Rechner"}` : "MIDI senden aus"));
+  if (m.clockRunning) midi.push(row("ok", `Clock läuft${m.bpm ? ` · ${m.bpm.toFixed(1)} BPM` : ""}`));
+  for (const d of s.devices) {
+    const busy = d.quietMs != null && d.quietMs < 1500;
+    midi.push(row(busy ? "ok" : "", `${esc(d.name)}${d.remote ? ' <span class="tag">Netzwerk</span>' : ""}`));
+  }
+  $("midi").innerHTML = midi.join("");
+  $("log").textContent = s.log.join("\n");
+}
+
+let source;
+function connect() {
+  source = new EventSource("/events");
+  source.onopen = () => { $("conn").textContent = "live"; $("status").hidden = false; $("login").style.display = "none"; };
+  source.onmessage = (e) => render(JSON.parse(e.data));
+  source.onerror = async () => {
+    source.close();
+    $("conn").textContent = "getrennt";
+    // 401 means the PIN is needed; anything else: PadBridge is gone, try again.
+    const probe = await fetch("/events", { method: "GET" }).catch(() => null);
+    if (probe && probe.status === 401) {
+      $("status").hidden = true;
+      $("login").style.display = "block";
+      $("pin").focus();
+    } else {
+      if (probe && probe.body) probe.body.cancel();
+      setTimeout(connect, 2000);
+    }
+  };
+}
+
+$("pinform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const res = await fetch("/login", { method: "POST", body: "pin=" + $("pin").value });
+  if (res.ok) { $("loginmsg").textContent = ""; connect(); }
+  else { $("loginmsg").textContent = res.status === 429 ? "Zu viele Versuche – kurz warten" : "PIN falsch"; $("pin").select(); }
+});
+
+connect();
+</script>
+</body>
+</html>

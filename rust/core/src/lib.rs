@@ -16,6 +16,7 @@ pub mod protocol;
 pub mod ring;
 pub mod settings;
 pub mod state;
+pub mod web;
 pub mod xbox360;
 
 pub use controls::{Control, PadAxis, PadButton};

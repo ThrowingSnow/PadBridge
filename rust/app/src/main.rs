@@ -7,6 +7,7 @@ mod engine;
 mod net;
 mod platform;
 mod ui;
+mod web;
 
 const USAGE: &str = "\
 usage: padbridge [--headless] [--listen] [--receive-only]

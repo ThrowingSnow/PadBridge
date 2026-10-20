@@ -18,6 +18,7 @@ pub const NET_FILE: &str = "netpad.json";
 pub const KEYMOUSE_FILE: &str = "keymouse.json";
 pub const SURFACES_FILE: &str = "surfaces.json";
 pub const KEY_FILE: &str = "netpad.key";
+pub const WEB_FILE: &str = "web.json";
 
 pub fn config_dir() -> PathBuf {
     if cfg!(windows) {

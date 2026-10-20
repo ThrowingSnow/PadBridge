@@ -16,6 +16,7 @@ use padbridge_core::midi::{ClockMessage, MidiClockTracker, MidiMapper, MidiMappi
 use padbridge_core::protocol::{self, Kind, Packet};
 use padbridge_core::ring::{Ring, RingMode};
 use padbridge_core::settings::{self, NetSettings};
+use padbridge_core::web::{self as web_auth, WebSettings};
 use padbridge_core::{Capabilities, Control, ControllerInfo, ControllerState, PadAxis, PadButton, PlayerIndicator};
 
 use crate::net::receiver::{Receiver, ReceiverStatus};
@@ -47,6 +48,9 @@ pub enum Command {
     SetKeyMouse(KeyMouseMapping),
     SetNet(NetSettings),
     SetSurfaces(SurfaceMapping),
+    SetWeb(WebSettings),
+    /// A new random PIN for the status page.
+    NewWebPin,
     Rumble { id: String, low: f32, high: f32 },
     Indicator(PlayerIndicator),
     RingMode(RingMode),
@@ -130,6 +134,10 @@ pub struct Snapshot {
     pub net: NetSettings,
     pub surfaces: SurfaceMapping,
     pub listen_forced: bool,
+    pub web: WebSettings,
+    /// The status page's address in the home network while it runs.
+    pub web_url: Option<String>,
+    pub web_error: Option<String>,
 }
 
 /// The UI's (or main's) side of the engine.
@@ -244,6 +252,11 @@ pub struct Engine {
     midi: MidiMapping,
     keymouse: KeyMouseMapping,
     net: NetSettings,
+    web: WebSettings,
+    web_server: Option<crate::web::WebServer>,
+    /// Its address in the home network, worked out when it starts.
+    web_url: Option<String>,
+    web_error: Option<String>,
     dirty: Option<Instant>,
     log: VecDeque<String>,
     next_keymouse_tick: Instant,
@@ -265,6 +278,7 @@ impl Engine {
         let keymouse: KeyMouseMapping = settings::load(&dir, settings::KEYMOUSE_FILE);
         let net: NetSettings = settings::load(&dir, settings::NET_FILE);
         let surfaces: SurfaceMapping = settings::load(&dir, settings::SURFACES_FILE);
+        let web: WebSettings = settings::load(&dir, settings::WEB_FILE);
         let snapshot = Snapshot {
             devices: Vec::new(),
             peer_pads: Vec::new(),
@@ -282,6 +296,9 @@ impl Engine {
             net: net.clone(),
             surfaces: surfaces.clone(),
             listen_forced,
+            web: web.clone(),
+            web_url: None,
+            web_error: None,
         };
         let shared = Arc::new(Mutex::new(snapshot));
         let handle = Handle { tx: tx.clone(), shared: shared.clone() };
@@ -320,6 +337,10 @@ impl Engine {
             midi,
             keymouse,
             net,
+            web,
+            web_server: None,
+            web_url: None,
+            web_error: None,
             dirty: None,
             log: VecDeque::new(),
             next_keymouse_tick: now,
@@ -361,6 +382,7 @@ impl Engine {
         }
         self.reconcile_link();
         self.reconcile_receiver();
+        self.reconcile_web();
 
         loop {
             let timeout = self.next_deadline().saturating_duration_since(Instant::now()).max(Duration::from_millis(1));
@@ -803,6 +825,19 @@ impl Engine {
                 self.changed = true;
                 return;
             }
+            Command::SetWeb(web) => {
+                let restart = web != self.web;
+                self.web = web;
+                if restart {
+                    self.web_server = None;
+                    self.reconcile_web();
+                }
+            }
+            Command::NewWebPin => {
+                self.web.pin = web_auth::new_pin();
+                self.web_server = None;
+                self.reconcile_web();
+            }
             Command::Quit => {}
         }
         self.dirty = Some(Instant::now());
@@ -1030,6 +1065,41 @@ impl Engine {
         }
     }
 
+    /// Starts or stops the status page to match the settings.
+    fn reconcile_web(&mut self) {
+        if !self.web.enabled {
+            self.web_server = None;
+            self.web_url = None;
+            self.web_error = None;
+            return;
+        }
+        if self.web_server.is_some() {
+            return;
+        }
+        if self.web.pin.len() != web_auth::PIN_LEN {
+            self.web.pin = web_auth::new_pin();
+            self.dirty = Some(Instant::now());
+        }
+        let key = self.key.as_ref().map_or(&[0u8; 32][..], |k| &k.0[..]);
+        let token = web_auth::session_token(key, &self.web.pin);
+        match crate::web::WebServer::start(self.web.port, self.shared.clone(), self.web.pin.clone(), token) {
+            Ok(server) => {
+                self.log(format!("Status-Webseite auf Port {}", self.web.port));
+                self.web_server = Some(server);
+                let host = crate::web::lan_address().map_or_else(crate::web::hostname, |ip| ip.to_string());
+                self.web_url = Some(format!("http://{host}:{}/", self.web.port));
+                self.web_error = None;
+            }
+            Err(e) => {
+                self.web_url = None;
+                let msg = format!("Status-Webseite: Port {} nicht verfügbar ({e})", self.web.port);
+                self.log(msg.clone());
+                self.web_error = Some(msg);
+            }
+        }
+        self.changed = true;
+    }
+
     // MARK: Timers
 
     fn timers(&mut self) {
@@ -1142,6 +1212,7 @@ impl Engine {
             settings::save(&dir, settings::KEYMOUSE_FILE, &self.keymouse),
             settings::save(&dir, settings::NET_FILE, &self.net),
             settings::save(&dir, settings::SURFACES_FILE, &self.surfaces),
+            settings::save(&dir, settings::WEB_FILE, &self.web),
         ];
         if let Some(Err(e)) = results.into_iter().find(|r| r.is_err()) {
             self.log(format!("Speichern fehlgeschlagen: {e}"));
@@ -1211,6 +1282,9 @@ impl Engine {
             })
             .collect();
         s.surfaces = self.surfaces.clone();
+        s.web = self.web.clone();
+        s.web_url = self.web_url.clone();
+        s.web_error = self.web_error.clone();
         s.keymouse_error = self.keymouse_error.clone();
         s.clock = self.clock_status.clone();
         s.ring_mode = self.ring.mode();

@@ -1,7 +1,9 @@
 use eframe::egui;
 use padbridge_core::settings::{self, HostPreset};
+use qrcode::{Color, QrCode};
 
 use super::{hint, status, App, GREEN, GREY, ORANGE};
+use crate::engine::Command;
 
 impl App {
     pub(super) fn network_tab(&mut self, ui: &mut egui::Ui) {
@@ -47,6 +49,10 @@ impl App {
             hint(ui, "Per Startoption --listen eingeschaltet.");
         }
         self.receiver_status(ui);
+
+        ui.add_space(8.0);
+        ui.separator();
+        self.web_page(ui);
 
         ui.add_space(8.0);
         ui.separator();
@@ -134,6 +140,44 @@ impl App {
         }
     }
 
+    /// The status page for phones: switch, address with QR code, PIN.
+    fn web_page(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Status-Webseite");
+        let mut web = self.snap.web.clone();
+        let mut changed = ui.checkbox(&mut web.enabled, "Status im Browser zeigen, z. B. auf dem Handy").changed();
+        ui.horizontal(|ui| {
+            ui.label("Port");
+            changed |= ui.add(egui::DragValue::new(&mut web.port).range(1024..=65535)).changed();
+        });
+        if changed {
+            self.handle.send(Command::SetWeb(web));
+        }
+        if let Some(e) = &self.snap.web_error {
+            status(ui, ORANGE, e.clone());
+        }
+        let Some(url) = self.snap.web_url.clone() else { return };
+        ui.horizontal_top(|ui| {
+            qr_code(ui, &url);
+            ui.vertical(|ui| {
+                status(ui, GREEN, format!("Läuft: {url}"));
+                if ui.button("Adresse kopieren").clicked() {
+                    ui.ctx().copy_text(url.clone());
+                }
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("PIN");
+                    ui.monospace(egui::RichText::new(&self.snap.web.pin).size(18.0));
+                    if ui.button("Neue PIN").clicked() {
+                        self.handle.send(Command::NewWebPin);
+                    }
+                });
+                hint(ui, "Im Heimnetz ohne PIN. Von außerhalb, z. B. über Tailscale, fragt die Seite nach der PIN.");
+                hint(ui, "Mit dem Handy den QR-Code scannen; „Zum Home-Bildschirm“ macht daraus eine App.");
+                hint(ui, "Nie per Portweiterleitung ins Internet stellen: Die Seite ist unverschlüsselt.");
+            });
+        });
+    }
+
     fn link_status(&self, ui: &mut egui::Ui) {
         let l = &self.snap.link;
         if !l.active {
@@ -189,6 +233,26 @@ impl App {
         }
         if r.midi_packets > 0 {
             hint(ui, format!("{} MIDI-Pakete empfangen", r.midi_packets));
+        }
+    }
+}
+
+/// Draws `text` as a QR code, black on white with the quiet zone.
+fn qr_code(ui: &mut egui::Ui, text: &str) {
+    let Ok(code) = QrCode::new(text.as_bytes()) else { return };
+    let modules = code.width();
+    let colors = code.to_colors();
+    let quiet = 4;
+    let cell = 4.0;
+    let side = (modules + 2 * quiet) as f32 * cell;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 4.0, egui::Color32::WHITE);
+    for (i, color) in colors.iter().enumerate() {
+        if *color == Color::Dark {
+            let (x, y) = ((i % modules + quiet) as f32, (i / modules + quiet) as f32);
+            let min = rect.min + egui::vec2(x * cell, y * cell);
+            painter.rect_filled(egui::Rect::from_min_size(min, egui::vec2(cell, cell)), 0.0, egui::Color32::BLACK);
         }
     }
 }

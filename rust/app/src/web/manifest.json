@@ -1,0 +1,9 @@
+{
+  "name": "PadBridge",
+  "short_name": "PadBridge",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1b1b1b",
+  "theme_color": "#1b1b1b",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
