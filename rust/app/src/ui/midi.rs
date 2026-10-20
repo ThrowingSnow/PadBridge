@@ -4,6 +4,7 @@ use padbridge_core::Control;
 
 use super::pad_map::{self, Look};
 use super::{hint, status, App, GREEN, GREY, ORANGE};
+use crate::engine::DeviceView;
 
 impl App {
     pub(super) fn midi_tab(&mut self, ui: &mut egui::Ui) {
@@ -33,6 +34,12 @@ impl App {
             }
         }
         hint(ui, "MIDI-Clock an „PadBridge“ senden, damit der LED-Ring im Takt blinkt (Monitor-Tab).");
+        changed |= ui
+            .checkbox(&mut self.midi.peer_pads, "Pads der Gegenstelle hier zu MIDI machen (mit dieser Belegung)")
+            .changed();
+        if self.midi.peer_pads {
+            hint(ui, "Auf der Gegenstelle dann „MIDI senden“ ausschalten, sonst kommt alles doppelt an.");
+        }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label("Kanal");
@@ -43,11 +50,22 @@ impl App {
             ui.label("Trigger-Deadzone");
             changed |= ui.add(egui::Slider::new(&mut self.midi.trigger_deadzone, 0.0..=0.2)).changed();
             if ui.button("Standard").clicked() {
-                self.midi = MidiMapping { target: self.midi.target, ..MidiMapping::default() };
+                self.midi =
+                    MidiMapping { target: self.midi.target, peer_pads: self.midi.peer_pads, ..MidiMapping::default() };
                 changed = true;
             }
         });
         ui.separator();
+        let choices = self.pad_choices();
+        if choices.len() > 1 {
+            ui.horizontal(|ui| {
+                ui.label("Pad");
+                self.pad_picker(ui, &choices);
+                if let Some(pad) = self.snap.peer_pads.iter().find(|d| Some(&d.info.id) == self.selected.as_ref()) {
+                    hint(ui, self.peer_pad_hint(pad));
+                }
+            });
+        }
         ui.horizontal(|ui| {
             ui.label("Ansicht");
             ui.selectable_value(&mut self.midi_picture, true, "Bild");
@@ -63,9 +81,15 @@ impl App {
         }
     }
 
+    /// The pad chosen in the monitor or here, local or the peer's.
+    fn selected_pad(&self) -> Option<&DeviceView> {
+        let mut pads = self.snap.devices.iter().chain(&self.snap.peer_pads);
+        pads.clone().find(|d| Some(&d.info.id) == self.selected.as_ref()).or(pads.next())
+    }
+
     fn binding_picture(&mut self, ui: &mut egui::Ui) -> bool {
-        let device =
-            self.snap.devices.iter().find(|d| Some(&d.info.id) == self.selected.as_ref()).or(self.snap.devices.first());
+        let device = self.selected_pad().cloned();
+        let device = device.as_ref();
         let auto = device.map_or(Look::Xbox, |d| Look::of_vendor(d.info.vendor_id));
         let look = self.pad_look.unwrap_or(auto);
         ui.horizontal(|ui| {
@@ -89,14 +113,7 @@ impl App {
     fn binding_table(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
         let conflicts = self.midi.conflicts();
-        let live = self
-            .snap
-            .devices
-            .iter()
-            .find(|d| Some(&d.info.id) == self.selected.as_ref())
-            .or(self.snap.devices.first())
-            .map(|d| d.midi_values.clone())
-            .unwrap_or_default();
+        let live = self.selected_pad().map(|d| d.midi_values.clone()).unwrap_or_default();
         egui::Grid::new("midi-bindings").striped(true).num_columns(9).spacing([12.0, 4.0]).show(ui, |ui| {
             for title in ["Control", "Aktiv", "Typ", "Nummer", "Modus", "Invert", "Velocity", "", "Live"] {
                 ui.label(egui::RichText::new(title).small().strong());

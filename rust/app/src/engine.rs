@@ -16,7 +16,7 @@ use padbridge_core::midi::{ClockMessage, MidiClockTracker, MidiMapper, MidiMappi
 use padbridge_core::protocol::{self, Kind, Packet};
 use padbridge_core::ring::{Ring, RingMode};
 use padbridge_core::settings::{self, NetSettings};
-use padbridge_core::{Control, ControllerInfo, ControllerState, PlayerIndicator};
+use padbridge_core::{Capabilities, Control, ControllerInfo, ControllerState, PadAxis, PadButton, PlayerIndicator};
 
 use crate::net::receiver::{Receiver, ReceiverStatus};
 use crate::net::sender::Link;
@@ -34,6 +34,10 @@ pub enum Msg {
     NetDeviceRaw(String, Vec<u8>),
     /// The peer announced one of its MIDI devices (every second).
     NetDeviceSeen(String),
+    /// A pad the peer sends here, by its index there.
+    PeerPad(u8, ControllerState),
+    /// The peer let go of that pad.
+    PeerPadGone(u8),
     Log(String),
     Cmd(Command),
 }
@@ -76,6 +80,8 @@ pub struct DeviceView {
     pub midi_values: HashMap<Control, i32>,
     /// Index on the peer when the pad is sent over the network.
     pub net_pad: Option<u8>,
+    /// For a pad of the peer: whether it is sending right now.
+    pub peer_live: Option<bool>,
 }
 
 /// An external MIDI device (control surface) and what it has sent.
@@ -108,6 +114,8 @@ const RECENT_MIDI: usize = 40;
 #[derive(Clone)]
 pub struct Snapshot {
     pub devices: Vec<DeviceView>,
+    /// Pads the peer sends here (shown only; MIDI from them if `peer_pads` is on).
+    pub peer_pads: Vec<DeviceView>,
     pub midi_inputs: Vec<MidiInputView>,
     pub midi_error: Option<String>,
     pub keymouse_error: Option<String>,
@@ -141,6 +149,29 @@ impl Handle {
     }
 }
 
+/// A pad the peer sends here.
+struct PeerPad {
+    state: ControllerState,
+    midi: MidiMapper,
+    seen: Instant,
+    live: bool,
+}
+
+/// Monitor and MIDI tab entry for the peer's pad `index`. The protocol does
+/// not say which pad it is; it arrives in the 360 layout.
+fn peer_pad_info(index: u8) -> ControllerInfo {
+    ControllerInfo {
+        id: format!("net-{index}"),
+        name: format!("Pad {} der Gegenstelle", index + 1),
+        vendor_id: 0x045e,
+        product_id: 0x028e,
+        backend: "netzwerk".into(),
+        capabilities: Capabilities::default(),
+        buttons: PadButton::ALL.to_vec(),
+        axes: PadAxis::ALL.to_vec(),
+    }
+}
+
 struct Device {
     info: ControllerInfo,
     out: Box<dyn PadOutput>,
@@ -159,6 +190,10 @@ const LINK_RETRY: Duration = Duration::from_secs(3);
 const RUMBLE_TIMEOUT: Duration = Duration::from_millis(500);
 const SAVE_DELAY: Duration = Duration::from_millis(500);
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(16);
+/// A peer's pad without packets for this long is released (its notes end).
+const PEER_PAD_SILENCE: Duration = Duration::from_millis(500);
+/// ... and dropped from the monitor after this long.
+const PEER_PAD_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How the engine runs, from the command line.
 #[derive(Debug, Clone, Copy, Default)]
@@ -177,6 +212,7 @@ pub struct Engine {
     shared: Arc<Mutex<Snapshot>>,
     started: Instant,
     devices: BTreeMap<String, Device>,
+    peer_pads: BTreeMap<u8, PeerPad>,
     midi_inputs: BTreeMap<String, MidiInputView>,
     surfaces: SurfaceMapping,
     surface_mappers: HashMap<String, SurfaceMapper>,
@@ -231,6 +267,7 @@ impl Engine {
         let surfaces: SurfaceMapping = settings::load(&dir, settings::SURFACES_FILE);
         let snapshot = Snapshot {
             devices: Vec::new(),
+            peer_pads: Vec::new(),
             midi_inputs: Vec::new(),
             midi_error: None,
             keymouse_error: None,
@@ -255,6 +292,7 @@ impl Engine {
             shared,
             started: now,
             devices: BTreeMap::new(),
+            peer_pads: BTreeMap::new(),
             midi_inputs: BTreeMap::new(),
             surfaces,
             surface_mappers: HashMap::new(),
@@ -422,6 +460,8 @@ impl Engine {
                     None => self.device_midi(&entry, &bytes),
                 }
             }
+            Msg::PeerPad(index, state) => self.peer_pad(index, state),
+            Msg::PeerPadGone(index) => self.peer_pad_gone(index),
             Msg::Log(line) => self.log(line),
             Msg::Cmd(cmd) => self.command(cmd),
         }
@@ -461,6 +501,45 @@ impl Engine {
         self.route_midi(&messages);
         self.emit_keys(&keys, self.keymouse.target);
         self.changed = true;
+    }
+
+    fn peer_pad(&mut self, index: u8, state: ControllerState) {
+        let mapping = self.midi.clone();
+        let pad = self.peer_pads.entry(index).or_insert_with(|| PeerPad {
+            state: ControllerState::default(),
+            midi: MidiMapper::new(mapping),
+            seen: Instant::now(),
+            live: true,
+        });
+        pad.state = state;
+        pad.seen = Instant::now();
+        pad.live = true;
+        let messages: Vec<Vec<u8>> = if self.midi.peer_pads {
+            pad.midi.process(&state).iter().map(|m| m.bytes().to_vec()).collect()
+        } else {
+            Vec::new()
+        };
+        self.route_midi(&messages);
+        self.changed = true;
+    }
+
+    /// Releases what the pad still holds in MIDI (notes, toggles stay).
+    fn peer_pad_release(&mut self, index: u8) {
+        let Some(pad) = self.peer_pads.get_mut(&index) else { return };
+        pad.state = ControllerState::default();
+        pad.live = false;
+        let messages: Vec<Vec<u8>> = if self.midi.peer_pads {
+            pad.midi.process(&pad.state).iter().map(|m| m.bytes().to_vec()).collect()
+        } else {
+            Vec::new()
+        };
+        self.route_midi(&messages);
+        self.changed = true;
+    }
+
+    fn peer_pad_gone(&mut self, index: u8) {
+        self.peer_pad_release(index);
+        self.peer_pads.remove(&index);
     }
 
     fn pad_gone(&mut self, id: &str) {
@@ -639,8 +718,17 @@ impl Engine {
                     self.clock = MidiClockTracker::new();
                     self.clock_status = ClockStatus::default();
                 }
+                if self.midi.peer_pads && !mapping.peer_pads {
+                    // Let go of notes from the peer's pads before going quiet.
+                    for index in self.peer_pads.keys().copied().collect::<Vec<_>>() {
+                        self.peer_pad_release(index);
+                    }
+                }
                 for dev in self.devices.values_mut() {
                     dev.midi.set_mapping(mapping.clone());
+                }
+                for pad in self.peer_pads.values_mut() {
+                    pad.midi.set_mapping(mapping.clone());
                 }
                 self.midi = mapping;
                 self.reconcile_link();
@@ -1021,13 +1109,22 @@ impl Engine {
             self.save_now();
         }
 
-        // The peer's pads are shown live in the monitor.
-        let remote_live = self
-            .receiver
-            .as_ref()
-            .is_some_and(|r| r.status.lock().unwrap().remote_pads.iter().any(|(_, _, live)| *live));
-        let every = if remote_live { PUBLISH_INTERVAL } else { Duration::from_millis(200) };
-        if self.receiver.is_some() && now.duration_since(self.last_publish) > every {
+        let silent: Vec<u8> = self
+            .peer_pads
+            .iter()
+            .filter(|(_, p)| p.live && p.seen.elapsed() > PEER_PAD_SILENCE)
+            .map(|(&i, _)| i)
+            .collect();
+        for index in silent {
+            self.peer_pad_release(index);
+        }
+        let gone: Vec<u8> =
+            self.peer_pads.iter().filter(|(_, p)| p.seen.elapsed() > PEER_PAD_TIMEOUT).map(|(&i, _)| i).collect();
+        for index in gone {
+            self.peer_pad_gone(index);
+        }
+
+        if self.receiver.is_some() && now.duration_since(self.last_publish) > Duration::from_millis(200) {
             self.changed = true;
         }
         if self.changed && now.duration_since(self.last_publish) >= PUBLISH_INTERVAL {
@@ -1068,6 +1165,24 @@ impl Engine {
                     .filter_map(|b| d.midi.last_sent(b.control).map(|v| (b.control, v)))
                     .collect(),
                 net_pad: if self.net.enabled { d.net_pad } else { None },
+                peer_live: None,
+            })
+            .collect();
+        let peer_pads = self
+            .peer_pads
+            .iter()
+            .map(|(&index, p)| DeviceView {
+                info: peer_pad_info(index),
+                state: p.state,
+                midi_values: p
+                    .midi
+                    .mapping()
+                    .bindings
+                    .iter()
+                    .filter_map(|b| p.midi.last_sent(b.control).map(|v| (b.control, v)))
+                    .collect(),
+                net_pad: None,
+                peer_live: Some(p.live),
             })
             .collect();
         let link = LinkStatus {
@@ -1086,6 +1201,7 @@ impl Engine {
         };
         let mut s = self.shared.lock().unwrap();
         s.devices = devices;
+        s.peer_pads = peer_pads;
         s.midi_inputs = self
             .midi_inputs
             .values()

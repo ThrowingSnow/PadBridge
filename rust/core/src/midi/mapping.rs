@@ -105,6 +105,11 @@ pub struct MidiMapping {
     /// Fraction ignored at the resting end of each trigger.
     pub trigger_deadzone: f32,
     pub bindings: Vec<MidiBinding>,
+    /// Also turn the pads a peer sends here into MIDI, with this mapping.
+    /// Off by default: usually the peer sends its own MIDI already. Written
+    /// only when on, so the file stays the Swift app's format.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub peer_pads: bool,
 }
 
 impl Default for MidiMapping {
@@ -121,6 +126,7 @@ impl Default for MidiMapping {
             stick_deadzone: 0.12,
             trigger_deadzone: 0.02,
             bindings: axes.chain(buttons).collect(),
+            peer_pads: false,
         }
     }
 }
@@ -167,6 +173,7 @@ impl<'de> Deserialize<'de> for MidiMapping {
             stick_deadzone: Option<f32>,
             trigger_deadzone: Option<f32>,
             bindings: Option<Vec<MidiBinding>>,
+            peer_pads: Option<bool>,
         }
         let p = Partial::deserialize(d)?;
         let def = MidiMapping::default();
@@ -183,6 +190,7 @@ impl<'de> Deserialize<'de> for MidiMapping {
             stick_deadzone: p.stick_deadzone.unwrap_or(def.stick_deadzone),
             trigger_deadzone: p.trigger_deadzone.unwrap_or(def.trigger_deadzone),
             bindings,
+            peer_pads: p.peer_pads.unwrap_or(def.peer_pads),
         })
     }
 }
