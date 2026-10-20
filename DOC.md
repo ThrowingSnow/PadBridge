@@ -1,7 +1,7 @@
 # PadBridge einrichten
 
 Diese Anleitung führt Schritt für Schritt durch die Einrichtung von PadBridge
-auf einem Mac und auf einem Linux-Rechner. Jede Installation kann allein
+auf einem Mac, einem Linux-Rechner und unter Windows. Jede Installation kann allein
 laufen (Pad → MIDI und Tastatur/Maus auf demselben Rechner) oder mit einer
 zweiten Installation im Netzwerk zusammenarbeiten, in beide Richtungen.
 
@@ -16,20 +16,22 @@ zweiten Installation im Netzwerk zusammenarbeiten, in beide Richtungen.
                                                 └──────────────────────────────┘
 ```
 
-Das virtuelle Gamepad auf der Gegenstelle gibt es nur unter Linux. Ein Mac als
-Gegenstelle nimmt MIDI und Tastatur/Maus an; für ein virtuelles Gamepad
-bräuchte macOS einen Treiber.
+Das virtuelle Gamepad auf der Gegenstelle gibt es nur unter Linux. Ein Mac
+oder Windows-PC als Gegenstelle nimmt MIDI und Tastatur/Maus an; für ein
+virtuelles Gamepad bräuchte es dort einen Treiber (unter Windows ist
+ViGEmBus geplant).
 
 Inhalt:
 1. [Mac](#1-mac)
 2. [Linux](#2-linux)
-3. [Bedienung](#3-bedienung)
-4. [Zwei Rechner verbinden](#4-zwei-rechner-verbinden)
-5. [Linux als Dienst und MIDI für Bitwig](#5-linux-als-dienst-und-midi-für-bitwig)
-6. [Einstellungen](#6-einstellungen)
-7. [Fehlersuche](#7-fehlersuche)
-8. [Sicherheit](#8-sicherheit)
-9. [Die alte Swift-App und padbridge-netpad](#9-die-alte-swift-app-und-padbridge-netpad)
+3. [Windows](#3-windows)
+4. [Bedienung](#4-bedienung)
+5. [Zwei Rechner verbinden](#5-zwei-rechner-verbinden)
+6. [Linux als Dienst und MIDI für Bitwig](#6-linux-als-dienst-und-midi-für-bitwig)
+7. [Einstellungen](#7-einstellungen)
+8. [Fehlersuche](#8-fehlersuche)
+9. [Sicherheit](#9-sicherheit)
+10. [Die alte Swift-App und padbridge-netpad](#10-die-alte-swift-app-und-padbridge-netpad)
 
 ---
 
@@ -158,9 +160,67 @@ beim LED-Ring „Nicht verfügbar“.
 
 ---
 
-## 3. Bedienung
+## 3. Windows
 
-Die Oberfläche hat vier Tabs.
+### Voraussetzungen
+
+- Windows 10 oder 11, 64 Bit.
+- Ein Xbox-Controller (360, One, Series oder ein anderes XInput-Pad) oder ein
+  PS4-Controller (DualShock 4) per USB.
+- Für MIDI: [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+  von Tobias Erichsen (kostenlos). Windows kann ohne Treiber keine virtuellen
+  MIDI-Ports anlegen, loopMIDI übernimmt das.
+
+### Bauen
+
+Die `.exe` entsteht auf einem Mac oder Linux-Rechner (Cross-Build) und wird
+dann auf den PC kopiert:
+
+```sh
+rustup target add x86_64-pc-windows-gnu
+brew install mingw-w64                 # Mac; unter Linux das Paket mingw-w64
+cd PadBridge/rust
+scripts/build-windows.sh               # -> target/x86_64-pc-windows-gnu/release/padbridge.exe
+```
+
+Auf dem PC die `padbridge.exe` in einen eigenen Ordner legen, zum Beispiel
+`C:\PadBridge\`, und per Doppelklick starten. Beim ersten Start fragt die
+Windows-Firewall nach: für **private Netzwerke** erlauben.
+
+### MIDI-Ports in loopMIDI
+
+In loopMIDI unten den Namen eintragen und auf **+** klicken:
+
+| Port | Richtung | nötig? |
+|---|---|---|
+| `PadBridge` | Pads → DAW | ja, für MIDI |
+| `PadBridge In` | DAW → PadBridge (z. B. MIDI-Clock für den LED-Ring) | nur für Clock |
+| `PadBridge <Gerät>` | MIDI-Gerät der Gegenstelle, z. B. `PadBridge Launch Control XL` | nur dafür |
+
+Die Namen müssen genau stimmen. PadBridge sucht die Ports beim Start: loopMIDI
+also **vor** PadBridge starten. Ein loopMIDI-Port gibt alles zurück, was
+hineingeht; darum braucht der Rückweg einen eigenen Port.
+
+### Was unter Windows anders ist
+
+- **Xbox-Controller** laufen über XInput. Den LED-Ring steuert Windows selbst,
+  darum sind die LED-Knöpfe im Monitor ausgegraut. Rumble geht.
+- **PS4-Controller:** Hängt er noch per Bluetooth an einem anderen Rechner,
+  bleibt er am Kabel dunkel. Dort zuerst trennen.
+- **MIDI-Geräte** (Launch Control XL, MIDImix, …) kann unter Windows immer nur
+  ein Programm gleichzeitig öffnen. Solange PadBridge ein Gerät liest, sieht
+  die DAW es nicht direkt; sie bekommt es über den Port `PadBridge`.
+- **Tastatur/Maus** gehen als Scancodes raus, also nach Tastenposition wie auf
+  Mac und Linux. In Fenster, die als Administrator laufen, kommen sie nicht
+  an, außer PadBridge läuft ebenfalls als Administrator.
+- **Virtuelles Gamepad** als Gegenstelle gibt es noch nicht (braucht
+  ViGEmBus). MIDI und Tastatur/Maus von einer Gegenstelle funktionieren.
+
+---
+
+## 4. Bedienung
+
+Die Oberfläche hat fünf Tabs.
 
 ### Monitor
 
@@ -179,7 +239,7 @@ Die Oberfläche hat vier Tabs.
 ### MIDI
 
 1. In der DAW (Bitwig, Ableton, Logic, …) den MIDI-Eingang **PadBridge**
-   aktivieren. Unter Linux siehe auch [Teil 5](#midi-für-bitwig-und-andere-daws-snd-virmidi).
+   aktivieren. Unter Linux siehe auch [Teil 6](#midi-für-bitwig-und-andere-daws-snd-virmidi).
 2. Im Tab **MIDI** „MIDI senden“ einschalten und das Ziel wählen: **Dieser
    Rechner** oder **Netzwerk-Gegenstelle**.
 3. Belegung anpassen, in einer von zwei Ansichten:
@@ -203,6 +263,20 @@ Modi „Clock: Beat“ und „Clock: Takt“ im Monitor dem Tempo. Mit Ziel
 „Netzwerk-Gegenstelle“ kommt die Clock der DAW auf der Gegenstelle zurück zum
 Pad.
 
+### MIDI-Geräte
+
+Hier erscheinen die MIDI-Controller am Rechner (Novation Launch Control XL,
+Akai MIDImix und APC mini mk2, Elektron Digitakt II, andere als Liste). Für
+die bekannten Geräte zeigt PadBridge eine Zeichnung mit allen Werten live.
+
+- **Umbelegen:** pro Regler oder Taste CC/Note, Nummer, Kanal und
+  Momentary/Toggle. Das Ergebnis kommt über den Port **PadBridge** heraus.
+- **LEDs:** Farbe und Helligkeit pro Control (Launch Control XL, APC mini) oder
+  an/aus (MIDImix); Toggles leuchten.
+- **Übers Netz:** Ein Gerät kann seine umbelegten Werte an die Gegenstelle
+  schicken. Dort kommen sie auf einem eigenen Port „PadBridge <Gerät>“ an
+  (unter Windows als loopMIDI-Port mit diesem Namen anlegen, Teil 3).
+
 ### Tastatur/Maus
 
 1. „Tastatur/Maus aktiv“ einschalten und das Ziel wählen: **Dieser Rechner**
@@ -218,13 +292,13 @@ Spiel nicht braucht.
 
 ---
 
-## 4. Zwei Rechner verbinden
+## 5. Zwei Rechner verbinden
 
 ### Schlüssel
 
 Beide Seiten brauchen denselben geheimen Schlüssel. Er entsteht beim ersten
 Start und liegt in der Datei `netpad.key` im Einstellungsordner (siehe
-[Teil 6](#6-einstellungen); der Tab **Netzwerk** zeigt den Pfad).
+[Teil 7](#7-einstellungen); der Tab **Netzwerk** zeigt den Pfad).
 
 1. Auf dem einen Rechner im Tab **Netzwerk** auf „Schlüssel kopieren“ klicken.
 2. Auf dem anderen Rechner den Schlüssel in dessen `netpad.key` schreiben,
@@ -234,7 +308,8 @@ Start und liegt in der Datei `netpad.key` im Einstellungsordner (siehe
    install -m 600 /dev/stdin ~/.config/padbridge/netpad.key
    # Schlüssel einfügen, Enter, dann Ctrl-D
    ```
-   Auf dem Mac ist es `~/Library/Application Support/PadBridge/netpad.key`.
+   Auf dem Mac ist es `~/Library/Application Support/PadBridge/netpad.key`,
+   unter Windows `%APPDATA%\PadBridge\netpad.key`.
 3. PadBridge auf diesem Rechner neu starten.
 
 ### Senden und empfangen
@@ -289,7 +364,7 @@ Preset).
 
 ---
 
-## 5. Linux als Dienst und MIDI für Bitwig
+## 6. Linux als Dienst und MIDI für Bitwig
 
 ### Als Dienst ohne Fenster
 
@@ -347,18 +422,20 @@ Prüfen ohne DAW: `aseqdump -p PadBridge` oder `amidi -p hw:9,0 -d`.
 
 ---
 
-## 6. Einstellungen
+## 7. Einstellungen
 
 | System | Ordner |
 |---|---|
 | macOS | `~/Library/Application Support/PadBridge/` |
 | Linux | `~/.config/padbridge/` |
+| Windows | `%APPDATA%\PadBridge\` |
 
 | Datei | Inhalt |
 |---|---|
 | `midi-mapping.json` | MIDI-Belegung, Kanal, Deadzones, Ziel |
 | `netpad.json` | Netzwerk: Host, Port, Rumble, Empfangen, Host-Presets |
 | `keymouse.json` | Tastatur/Maus-Belegung |
+| `surfaces.json` | MIDI-Geräte: Umbelegung und LEDs |
 | `netpad.key` | geheimer Schlüssel fürs Netzwerk (wird beim ersten Start erzeugt, `chmod 600`) |
 
 Die Dateien sind mit der alten Swift-App und `padbridge-netpad` kompatibel.
@@ -367,7 +444,7 @@ auch den Schlüssel. Die Gegenstelle muss dann nicht neu gekoppelt werden.
 
 ---
 
-## 7. Fehlersuche
+## 8. Fehlersuche
 
 | Symptom | Ursache / Lösung |
 |---|---|
@@ -379,14 +456,16 @@ auch den Schlüssel. Die Gegenstelle muss dann nicht neu gekoppelt werden.
 | „Port 48100 nicht verfügbar“ | Ein anderes PadBridge (Dienst, zweites Fenster) oder der alte `padbridge-netpad` belegt den Port. Dort „Empfangen“ ausschalten. |
 | Pad auf Linux fehlt | Keine Schreibrechte auf `/dev/uinput` (Gruppe `input`, neu anmelden). |
 | Zwei Pads im Spiel | Gamepad-Support in Moonlight ausschalten. |
-| Bitwig sieht kein MIDI | snd-virmidi laden (Teil 5) und **VirMIDI** wählen, nicht „PadBridge“. |
+| Bitwig sieht kein MIDI | snd-virmidi laden (Teil 6) und **VirMIDI** wählen, nicht „PadBridge“. |
 | LED-Ring folgt der Clock nicht | Die DAW muss Clock an PadBridge bzw. VirMIDI senden, und das MIDI-Ziel muss zur DAW passen (dieser Rechner oder Gegenstelle). |
 | Tastatur/Maus am Mac ohne Wirkung | Bedienungshilfen-Freigabe fehlt oder ist nach einem neuen Build veraltet (Teil 1). |
+| „kein MIDI-Port ‚PadBridge‘“ (Windows) | In loopMIDI einen Port mit genau diesem Namen anlegen und PadBridge danach neu starten (Teil 3). |
+| MIDI-Gerät „lässt sich nicht öffnen“ (Windows) | Ein anderes Programm (DAW, Hersteller-Editor) hat es schon geöffnet. Dort schließen oder in der DAW stattdessen den Port `PadBridge` nehmen. |
 | Tasten bleiben hängen | Kommt nicht vor: Die Gegenstelle lässt nach 500 ms ohne Pakete alles los. Wenn doch, „aktiv“ aus- und wieder einschalten. |
 
 ---
 
-## 8. Sicherheit
+## 9. Sicherheit
 
 - PadBridge nimmt nur Pakete an, die mit dem gemeinsamen Schlüssel signiert
   sind (HMAC-SHA256), und verwirft wiederholte Pakete.
@@ -399,7 +478,7 @@ auch den Schlüssel. Die Gegenstelle muss dann nicht neu gekoppelt werden.
 
 ---
 
-## 9. Die alte Swift-App und padbridge-netpad
+## 10. Die alte Swift-App und padbridge-netpad
 
 Vor der Rust-App bestand PadBridge aus einer Swift-App für macOS 13+
 (`Sources/`, nur Xbox 360) und dem Linux-Empfänger `linux/padbridge-netpad`.
@@ -414,7 +493,7 @@ Senden von Linux aus) gibt es nur in der Rust-App.
 
 ```sh
 systemctl --user disable --now padbridge-netpad
-# dann den Dienst aus Teil 5 einrichten
+# dann den Dienst aus Teil 6 einrichten
 ```
 
 Zurück zum alten Daemon: `systemctl --user disable --now padbridge` und

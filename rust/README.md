@@ -1,6 +1,6 @@
 # PadBridge (Rust)
 
-One code base for Linux and macOS (10.13+), replacing the Swift app and the
+One code base for Linux, macOS (10.13+) and Windows, replacing the Swift app and the
 `padbridge-netpad` daemon. Setup for users: [../DOC.md](../DOC.md) (German).
 
 ```
@@ -16,6 +16,9 @@ app/     padbridge: engine thread + egui UI (glow/OpenGL, so it runs on Macs
   platform/linux  evdev pads (hotplug, FF rumble, xpad LED, DS4 light bar), uinput, ALSA
   platform/macos  libusb Xbox 360 pads, hidapi DualShock 4, CoreMIDI ports,
                   CGEvent keyboard/mouse
+  platform/windows XInput pads, SendInput keyboard/mouse, MIDI via midir (WinMM),
+                  "PadBridge" port = a loopMIDI port of that name
+  platform/hid_pads.rs  hidapi DualShock 4, shared by macOS and Windows
   ui/pad_map.rs   MIDI tab picture view (pad outline with a field per control)
   platform/stub   placeholder for other systems
 spike/   stage-0 feasibility test for macOS 10.13 (egui/glow + libusb + CoreMIDI)
@@ -30,6 +33,7 @@ the same protocol, so the Swift app and the old daemon interoperate.
 cargo test -p padbridge-core
 cargo build --release -p padbridge          # Linux: needs alsa-lib headers
 MACOSX_DEPLOYMENT_TARGET=10.13 cargo build --release -p padbridge   # macOS
+scripts/build-windows.sh                    # Windows .exe, cross-built (mingw-w64)
 ```
 
 ## Status
@@ -42,5 +46,7 @@ MACOSX_DEPLOYMENT_TARGET=10.13 cargo build --release -p padbridge   # macOS
       (a virtual game pad needs a driver there)
 - [x] DualShock 4 (macOS via HID, USB and Bluetooth; Linux via evdev + sysfs LEDs)
 - [x] MIDI tab picture view
-- [ ] Stage 4: forward MIDI controllers (per device, both directions), SysEx
+- [x] Stage 4: MIDI devices tab, forward MIDI controllers per device over the network
+- [x] Windows: XInput and HID pads, SendInput, WinMM MIDI, loopMIDI port
+- [ ] Windows: virtual game pad (ViGEmBus)
 - [ ] Retire the Swift app and padbridge-netpad

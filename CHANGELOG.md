@@ -7,6 +7,14 @@ versioned separately by its magic (`PBG1` = protocol v1).
 ## [Unreleased]
 
 ### Added
+- Windows 10/11: Xbox pads via XInput (rumble; Guide button via
+  XInputGetStateEx), DualShock 4 via HID (USB: buttons, sticks, rumble, light
+  bar), keyboard/mouse via SendInput (scan codes, so keys hit the same
+  positions as on macOS and Linux), MIDI devices via WinMM. The "PadBridge"
+  port is a loopMIDI port of that name, "PadBridge In" the way back.
+  Settings in `%APPDATA%\PadBridge`. No virtual game pad yet (ViGEmBus).
+- `scripts/build-windows.sh` cross-builds the .exe; both build scripts keep
+  the home directory out of the binary.
 - "MIDI-Geräte" tab: listens to external MIDI devices (CoreMIDI on macOS,
   ALSA hardware ports on Linux) alongside other apps, with all values seen
   and a message log, SysEx included.
@@ -32,6 +40,8 @@ versioned separately by its magic (`PBG1` = protocol v1).
   its "MIDI-Geräte" tab as "<device> · Netzwerk", drawn live and read-only.
 
 ### Fixed
+- DualShock 4: light bar and rumble changes could take seconds (and freeze
+  the picture meanwhile), because the read loop kept the device lock.
 - macOS: MIDI devices plugged in or out while the app runs now appear and
   disappear (the device list follows CoreMIDI notifications); the tab
   switches to a device that was just plugged in.
