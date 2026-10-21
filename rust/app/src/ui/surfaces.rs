@@ -311,7 +311,7 @@ fn surface_view(ui: &mut egui::Ui, model: Model, input: &MidiInputView, mapping:
         match ctl.kind {
             CtlKind::Knob => knob(&d, r, &input.state, key, &look),
             CtlKind::Encoder => encoder(&d, r, &input.state, key, &look),
-            CtlKind::Fader => fader(&d, r, &input.state, key, &look),
+            CtlKind::Fader | CtlKind::Strip => fader(&d, r, &input.state, key, &look),
             CtlKind::Button => button(&d, r, &input.state, key, &look, &ctl),
         }
         if mapping.enabled {
@@ -470,6 +470,9 @@ struct Look {
 impl Look {
     /// What the control sends, as a short label.
     fn out_label(&self, key: SurfaceKey) -> String {
+        if key.kind == SurfaceKind::Pitch && self.binding.is_none() {
+            return "PB".into();
+        }
         let (kind, number, channel) = match self.binding {
             Some(b) => (b.kind, b.number, b.channel),
             None if key.kind == SurfaceKind::Note => (MidiMessageKind::Note, key.number, key.channel),
@@ -568,7 +571,8 @@ fn fader(d: &Painter, r: Rect, st: &SurfaceState, key: SurfaceKey, look: &Look) 
     let bottom = Pos2::new(x, r.bottom() - 7.0 * d.s);
     let slot = Rect::from_min_max(top - Vec2::new(2.5 * d.s, 0.0), bottom + Vec2::new(2.5 * d.s, 0.0));
     d.p.rect_filled(slot, CornerRadius::same(2), Color32::from_gray(12));
-    let v = st.get(key).map(|v| v.value as f32 / 127.0);
+    // Pitch bend (touch strip) has 14 bits, everything else 7.
+    let v = st.get(key).map(|v| v.value as f32 / key.max_value() as f32);
     if let Some(v) = v {
         let y = bottom.y + (top.y - bottom.y) * v;
         let colour = blend(look.accent((v * 127.0) as u16), Color32::WHITE, look.flash.unwrap_or(0.0) * 0.6);

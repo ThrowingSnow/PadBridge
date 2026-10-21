@@ -16,10 +16,17 @@
 //!   LED is red, amber or green: a note on to the button's note +0, +36 or
 //!   +72; a note off to its note turns it off. The Layer button uses notes
 //!   12/16/20 for its colours. Map as in Mixxx's K2 mapping.
+//! - Ableton Push 2 (Live port, channel 1): pads are notes 36-99 (bottom
+//!   left to top right), buttons CCs, encoders relative CCs (touch: notes
+//!   0-10), touch strip pitch bend (touch: note 12). LEDs take the same
+//!   message with the velocity as colour index: pads from the RGB palette
+//!   (127 red, 126 green, 122 white), buttons get 122 (white on both the RGB
+//!   and the white buttons). Map from Ableton's Push 2 MIDI interface
+//!   document, button positions measured on the device.
 
 use std::collections::BTreeSet;
 
-use super::surface::{meter_colour, DeviceMapping, LedColour, LedMode, SurfaceKey, SurfaceState};
+use super::surface::{meter_colour, DeviceMapping, LedColour, LedMode, SurfaceKey, SurfaceKind, SurfaceState};
 use super::ButtonMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,6 +35,7 @@ pub enum Model {
     MidiMix,
     ApcMiniMk2,
     XoneK2,
+    Push2,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +45,8 @@ pub enum CtlKind {
     Encoder,
     Fader,
     Button,
+    /// A touch strip sending pitch bend (Push 2).
+    Strip,
 }
 
 /// One control: what it sends, its LED and its place in the drawing.
@@ -62,6 +72,9 @@ pub struct Ctl {
 
 impl Ctl {
     pub fn input(&self, channel: u8) -> SurfaceKey {
+        if self.kind == CtlKind::Strip {
+            return SurfaceKey { kind: SurfaceKind::Pitch, channel, number: 0 };
+        }
         if self.note {
             SurfaceKey::note(channel, self.number)
         } else {
@@ -94,6 +107,10 @@ impl Model {
             Some(Model::ApcMiniMk2)
         } else if lower.contains("xone:k2") || lower.contains("xone k2") {
             Some(Model::XoneK2)
+        } else if lower.contains("push 2") && !lower.contains("user port") && !lower.contains("midiin2") {
+            // The controls arrive on the Live port (port 1) unless the Push
+            // is switched to User mode.
+            Some(Model::Push2)
         } else {
             None
         }
@@ -103,7 +120,7 @@ impl Model {
     pub fn default_channel(self) -> u8 {
         match self {
             Model::LaunchControlXl => 8, // factory template 1, the power-on default
-            Model::MidiMix | Model::ApcMiniMk2 => 0,
+            Model::MidiMix | Model::ApcMiniMk2 | Model::Push2 => 0,
             Model::XoneK2 => 14,
         }
     }
@@ -115,6 +132,7 @@ impl Model {
             Model::MidiMix => false,
             Model::ApcMiniMk2 => index < 64,
             Model::XoneK2 => index != K2_EXIT_LED,
+            Model::Push2 => index < 64,
         }
     }
 
@@ -125,6 +143,7 @@ impl Model {
             Model::MidiMix => (660.0, 440.0),
             Model::ApcMiniMk2 => (660.0, 540.0),
             Model::XoneK2 => (300.0, 770.0),
+            Model::Push2 => (670.0, 530.0),
         }
     }
 
@@ -133,7 +152,7 @@ impl Model {
         match self {
             Model::LaunchControlXl if channel < 8 => Some(format!("User {}", channel + 1)),
             Model::LaunchControlXl => Some(format!("Factory {}", channel - 7)),
-            Model::MidiMix | Model::ApcMiniMk2 | Model::XoneK2 => None,
+            Model::MidiMix | Model::ApcMiniMk2 | Model::XoneK2 | Model::Push2 => None,
         }
     }
 
@@ -163,6 +182,12 @@ impl Model {
             ],
             Model::ApcMiniMk2 => vec![c("Scene Launch", APC_SIDE_X, 14.0, true), c("Master", APC_SIDE_X, 368.0, true)],
             Model::XoneK2 => vec![],
+            Model::Push2 => vec![
+                c("Tempo", 37.5, 46.0, true),
+                c("Swing", 92.5, 46.0, true),
+                c("Master", 620.0, 46.0, true),
+                c("Display (nicht über MIDI)", 326.0, 120.0, true),
+            ],
         }
     }
 
@@ -172,6 +197,7 @@ impl Model {
             Model::MidiMix => midimix_controls(),
             Model::ApcMiniMk2 => apc_controls(),
             Model::XoneK2 => k2_controls(),
+            Model::Push2 => push2_controls(),
         }
     }
 
@@ -181,6 +207,7 @@ impl Model {
             Model::MidiMix => 18,
             Model::ApcMiniMk2 => 80,
             Model::XoneK2 => K2_EXIT_LED + 1,
+            Model::Push2 => 64 + PUSH2_BUTTONS.len(),
         }
     }
 
@@ -191,6 +218,10 @@ impl Model {
             Model::MidiMix => vec![0x90 | (channel & 0x0F), MIX_LED_NOTES[index], value],
             Model::ApcMiniMk2 => apc_led_message(index, value),
             Model::XoneK2 => k2_led_message(channel, index, value),
+            Model::Push2 => match index {
+                0..64 => vec![0x90, 36 + index as u8, value],
+                _ => vec![0xB0, PUSH2_BUTTONS[index - 64].0, if value > 0 { 122 } else { 0 }],
+            },
         }
     }
 
@@ -198,7 +229,7 @@ impl Model {
     pub fn reset(self, channel: u8) -> Vec<Vec<u8>> {
         match self {
             Model::LaunchControlXl => vec![vec![0xB0 | (channel & 0x0F), 0, 0]],
-            Model::MidiMix | Model::ApcMiniMk2 | Model::XoneK2 => {
+            Model::MidiMix | Model::ApcMiniMk2 | Model::XoneK2 | Model::Push2 => {
                 (0..self.led_count()).map(|i| self.led_message(channel, i, 0)).collect()
             }
         }
@@ -252,6 +283,13 @@ impl Model {
                 (true, false) => 1,
                 (true, true) => 2,
                 (false, true) => 3,
+            },
+            // RGB palette of the pads: red, green; mixed colours as white.
+            Model::Push2 => match (red > 0, green > 0) {
+                (false, false) => 0,
+                (true, false) => 127,
+                (false, true) => 126,
+                (true, true) => 122,
             },
         }
     }
@@ -583,6 +621,104 @@ fn k2_led_message(channel: u8, index: usize, value: u8) -> Vec<u8> {
     }
 }
 
+/// Push 2 buttons: CC, name, centre and size in drawing units, arrow.
+/// Positions measured from a photo of the device (670 x 530 units).
+#[allow(clippy::type_complexity)]
+const PUSH2_BUTTONS: &[(u8, &str, (f32, f32), (f32, f32), Option<u8>)] = &[
+    (3, "Tap Tempo", (45.0, 57.5), (40.0, 16.0), None),
+    (9, "Metronome", (87.5, 57.5), (40.0, 16.0), None),
+    (118, "Delete", (36.0, 101.5), (32.0, 28.0), None),
+    (119, "Undo", (36.0, 133.5), (32.0, 28.0), None),
+    (60, "Mute", (35.0, 182.5), (26.0, 16.0), None),
+    (61, "Solo", (63.5, 182.5), (26.0, 16.0), None),
+    (29, "Stop Clip", (92.5, 182.5), (26.0, 16.0), None),
+    (35, "Convert", (33.5, 222.5), (32.0, 26.0), None),
+    (117, "Double Loop", (33.5, 252.5), (32.0, 26.0), None),
+    (116, "Quantize", (33.5, 282.5), (32.0, 26.0), None),
+    (88, "Duplicate", (33.5, 322.5), (32.0, 26.0), None),
+    (87, "New", (33.5, 355.0), (32.0, 26.0), None),
+    (90, "Fixed Length", (33.5, 392.5), (32.0, 26.0), None),
+    (89, "Automate", (33.5, 425.0), (32.0, 26.0), None),
+    (86, "Record", (33.5, 456.0), (32.0, 26.0), None),
+    (85, "Play", (33.5, 492.5), (32.0, 26.0), None),
+    (30, "Setup", (605.0, 57.5), (30.0, 16.0), None),
+    (59, "User", (637.5, 57.5), (30.0, 16.0), None),
+    (52, "Add Device", (561.0, 105.0), (32.0, 28.0), None),
+    (53, "Add Track", (561.0, 137.5), (32.0, 28.0), None),
+    (110, "Device", (605.0, 105.0), (30.0, 28.0), None),
+    (112, "Mix", (637.5, 105.0), (30.0, 28.0), None),
+    (111, "Browse", (605.0, 137.5), (30.0, 28.0), None),
+    (113, "Clip", (637.5, 137.5), (30.0, 28.0), None),
+    (28, "Master", (561.0, 182.5), (32.0, 16.0), None),
+    (46, "Hoch", (622.5, 190.0), (26.0, 18.0), Some(0)),
+    (47, "Runter", (622.5, 227.0), (26.0, 18.0), Some(1)),
+    (44, "Links", (603.0, 208.5), (18.0, 22.0), Some(2)),
+    (45, "Rechts", (642.0, 208.5), (18.0, 22.0), Some(3)),
+    (56, "Repeat", (607.5, 341.0), (30.0, 24.0), None),
+    (57, "Accent", (640.0, 341.0), (30.0, 24.0), None),
+    (58, "Scale", (607.5, 376.5), (30.0, 24.0), None),
+    (31, "Layout", (640.0, 376.5), (30.0, 24.0), None),
+    (50, "Note", (607.5, 403.5), (30.0, 24.0), None),
+    (51, "Session", (640.0, 403.5), (30.0, 24.0), None),
+    (55, "Octave Up", (624.0, 437.0), (26.0, 18.0), Some(0)),
+    (54, "Octave Down", (624.0, 473.0), (26.0, 18.0), Some(1)),
+    (62, "Page Left", (605.0, 455.0), (18.0, 22.0), Some(2)),
+    (63, "Page Right", (643.0, 455.0), (18.0, 22.0), Some(3)),
+    (49, "Shift", (607.5, 505.0), (30.0, 18.0), None),
+    (48, "Select", (640.0, 505.0), (30.0, 18.0), None),
+];
+
+fn push2_controls() -> Vec<Ctl> {
+    let base = |kind, note, number, name: String, led, at, size| Ctl {
+        kind,
+        note,
+        number,
+        name,
+        led,
+        at,
+        size,
+        caption: None,
+        arrow: None,
+        led_hint: None,
+    };
+    let col = |c: usize| 147.5 + c as f32 * 50.3;
+    let mut out = Vec::new();
+    out.push(base(CtlKind::Encoder, false, 14, "Tempo".into(), None, (37.5, 22.5), (30.0, 30.0)));
+    out.push(base(CtlKind::Encoder, false, 15, "Swing".into(), None, (92.5, 22.5), (34.0, 34.0)));
+    for c in 0..8 {
+        out.push(base(CtlKind::Encoder, false, 71 + c as u8, format!("Encoder {}", c + 1), None, (col(c) + 5.0, 22.5), (34.0, 34.0)));
+    }
+    out.push(base(CtlKind::Encoder, false, 79, "Master".into(), None, (620.0, 22.5), (34.0, 34.0)));
+    for c in 0..8 {
+        out.push(base(CtlKind::Button, false, 102 + c as u8, format!("Über Display {}", c + 1), None, (col(c) + 5.0, 57.5), (44.0, 16.0)));
+        out.push(base(CtlKind::Button, false, 20 + c as u8, format!("Unter Display {}", c + 1), None, (col(c) + 5.0, 182.5), (44.0, 16.0)));
+    }
+    out.push(base(CtlKind::Strip, false, 0, "Touch Strip".into(), None, (86.0, 357.5), (34.0, 300.0)));
+    for row in 0..8 {
+        for c in 0..8 {
+            let note = 36 + (7 - row) * 8 + c;
+            out.push(base(
+                CtlKind::Button,
+                true,
+                note as u8,
+                format!("Pad {}", note - 35),
+                Some(note - 36),
+                (col(c), 222.5 + row as f32 * 39.0),
+                (44.0, 34.0),
+            ));
+        }
+        let scene = 43 - row as u8;
+        out.push(base(CtlKind::Button, false, scene, format!("Szene {}", row + 1), None, (562.5, 222.5 + row as f32 * 39.0), (32.0, 30.0)));
+    }
+    for (i, &(cc, name, at, size, arrow)) in PUSH2_BUTTONS.iter().enumerate() {
+        let mut b = base(CtlKind::Button, false, cc, name.into(), Some(64 + i), at, size);
+        b.arrow = arrow;
+        b.led_hint = Some("Am Push 2 nur an/aus (weiss).");
+        out.push(b);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -668,8 +804,29 @@ mod tests {
     }
 
     #[test]
+    fn push2_pads_buttons_and_strip() {
+        let m = Model::Push2;
+        assert_eq!(Model::of("Ableton Push 2 Live Port"), Some(m));
+        assert_eq!(Model::of("Ableton Push 2 User Port"), None);
+        let find = |name: &str| m.controls().into_iter().find(|c| c.name == name).unwrap();
+        // Bottom left pad is note 36, top right 99.
+        let pads: Vec<Ctl> = m.controls().into_iter().filter(|c| c.name.starts_with("Pad ")).collect();
+        assert_eq!(pads.len(), 64);
+        let low = pads.iter().find(|c| c.number == 36).unwrap();
+        let high = pads.iter().find(|c| c.number == 99).unwrap();
+        assert!(low.at.0 < high.at.0 && low.at.1 > high.at.1);
+        assert_eq!(m.led_message(0, low.led.unwrap(), m.encode(3, 0)), vec![0x90, 36, 127]);
+        assert_eq!(m.led_message(0, find("Play").led.unwrap(), m.encode(0, 3)), vec![0xB0, 85, 122]);
+        assert_eq!(find("Touch Strip").input(0).kind, SurfaceKind::Pitch);
+        // Every CC of the document appears once.
+        let ccs: Vec<u8> = m.controls().iter().filter(|c| !c.note && c.kind != CtlKind::Strip).map(|c| c.number).collect();
+        let unique: BTreeSet<u8> = ccs.iter().copied().collect();
+        assert_eq!(ccs.len(), unique.len());
+    }
+
+    #[test]
     fn leds_are_unique_per_model() {
-        for m in [Model::LaunchControlXl, Model::MidiMix, Model::ApcMiniMk2, Model::XoneK2] {
+        for m in [Model::LaunchControlXl, Model::MidiMix, Model::ApcMiniMk2, Model::XoneK2, Model::Push2] {
             let mut seen = BTreeSet::new();
             for ctl in m.controls() {
                 if let Some(i) = ctl.led {
