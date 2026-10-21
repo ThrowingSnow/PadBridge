@@ -16,10 +16,14 @@ zweiten Installation im Netzwerk zusammenarbeiten, in beide Richtungen.
                                                 └──────────────────────────────┘
 ```
 
-Das virtuelle Gamepad auf der Gegenstelle gibt es nur unter Linux. Ein Mac
-oder Windows-PC als Gegenstelle nimmt MIDI und Tastatur/Maus an; für ein
-virtuelles Gamepad bräuchte es dort einen Treiber (unter Windows ist
-ViGEmBus geplant).
+Das virtuelle Gamepad auf der Gegenstelle gibt es unter Linux (uinput) und
+unter Windows (mit dem kostenlosen Treiber ViGEmBus). Ein Mac als Gegenstelle
+nimmt MIDI und Tastatur/Maus an; für ein virtuelles Gamepad bräuchte macOS
+einen Treiber.
+
+Fertige Programme für alle drei Systeme gibt es unter
+[Releases](https://github.com/ThrowingSnow/PadBridge/releases). Selbst bauen
+ist nur nötig, wer am Code mitarbeiten will.
 
 Inhalt:
 1. [Mac](#1-mac)
@@ -92,17 +96,19 @@ erneut, ein Neustart ist nicht nötig.
 
 ## 2. Linux
 
-Getestet unter Arch/CachyOS mit KDE Plasma. Andere Distributionen
-funktionieren genauso, nur die Paketnamen unterscheiden sich.
+Getestet unter Arch/CachyOS (KDE Plasma) und Zorin OS 18 (Ubuntu 24.04,
+GNOME mit Wayland). Das fertige Paket läuft auf Ubuntu 20.04 und neuer,
+Debian 11+, Mint, Zorin, Pop!_OS sowie aktuellem Arch und Fedora.
 
-### Pakete
+### Fertiges Paket
 
 ```sh
-# Arch / CachyOS
-sudo pacman -S --needed rust alsa-lib pkgconf
-# Debian / Ubuntu
-sudo apt install cargo libasound2-dev pkg-config
+tar xzf padbridge-<version>-linux-x86_64.tar.gz
+install -Dm755 padbridge-<version>-linux-x86_64/padbridge ~/.local/bin/padbridge
+padbridge            # mit Fenster
 ```
+
+Danach die Rechte unten einrichten.
 
 ### Rechte für Pads und virtuelle Geräte
 
@@ -119,15 +125,27 @@ sudo usermod -aG input "$USER"     # danach ab- und wieder anmelden
 sudo udevadm control --reload && sudo udevadm trigger
 ```
 
-### Bauen und starten
+### Selbst bauen
+
+PadBridge braucht ein aktuelles Rust. Die Pakete `cargo`/`rustc` von Ubuntu
+und Debian sind dafür zu alt, darum Rust über [rustup](https://rustup.rs):
 
 ```sh
+# Arch / CachyOS
+sudo pacman -S --needed rustup alsa-lib pkgconf && rustup default stable
+# Debian / Ubuntu / Mint / Zorin
+sudo apt install build-essential libasound2-dev pkg-config curl
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
 git clone https://github.com/ThrowingSnow/PadBridge.git
 cd PadBridge/rust
 cargo build --release -p padbridge
 install -Dm755 target/release/padbridge ~/.local/bin/padbridge
-padbridge            # mit Fenster
 ```
+
+Ein auf einem Rolling-Release-System (Arch) gebautes Programm braucht dessen
+neueste glibc und startet auf Ubuntu nicht. Für ein Paket, das überall läuft,
+baut `scripts/build-linux.sh` in einem Ubuntu-20.04-Container (braucht Docker).
 
 Jedes Gamepad, das Linux kennt, erscheint im Monitor, auch beim Ein- und
 Ausstecken: der Xbox-360-Controller über den Kernel-Treiber xpad, der
@@ -171,7 +189,27 @@ beim LED-Ring „Nicht verfügbar“.
   von Tobias Erichsen (kostenlos). Windows kann ohne Treiber keine virtuellen
   MIDI-Ports anlegen, loopMIDI übernimmt das.
 
-### Bauen
+### Installieren
+
+Die `padbridge-<version>-windows-x86_64.exe` aus den Releases in einen
+eigenen Ordner legen, zum Beispiel `C:\PadBridge\`, und per Doppelklick
+starten. Das Programm ist nicht signiert: Warnt Windows SmartScreen, auf
+**Weitere Informationen** → **Trotzdem ausführen** klicken. Beim ersten Start
+fragt die Windows-Firewall nach: für **private Netzwerke** erlauben.
+
+### Virtuelles Gamepad (ViGEmBus)
+
+Damit der PC Pads einer Gegenstelle als echten Xbox-360-Controller an Spiele
+weitergibt, braucht es den kostenlosen Treiber
+[ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) (Datei
+`ViGEmBus_…_x64_x86_arm64.exe`). Er wird nicht mehr weiterentwickelt, die
+letzte Version läuft aber unter Windows 10 und 11. Achtung: Ein mit der
+Meta-Quest-Software installierter „Oculus Virtual Gamepad Emulation Bus“ ist
+eine andere Abwandlung und reicht nicht, beide vertragen sich aber. Fehlt der
+Treiber, meldet das Protokoll „ViGEmBus ist nicht installiert“; MIDI und
+Tastatur/Maus von der Gegenstelle gehen trotzdem.
+
+### Selbst bauen
 
 Die `.exe` entsteht auf einem Mac oder Linux-Rechner (Cross-Build) und wird
 dann auf den PC kopiert:
@@ -182,10 +220,6 @@ brew install mingw-w64                 # Mac; unter Linux das Paket mingw-w64
 cd PadBridge/rust
 scripts/build-windows.sh               # -> target/x86_64-pc-windows-gnu/release/padbridge.exe
 ```
-
-Auf dem PC die `padbridge.exe` in einen eigenen Ordner legen, zum Beispiel
-`C:\PadBridge\`, und per Doppelklick starten. Beim ersten Start fragt die
-Windows-Firewall nach: für **private Netzwerke** erlauben.
 
 ### MIDI-Ports in loopMIDI
 
@@ -209,12 +243,15 @@ hineingeht; darum braucht der Rückweg einen eigenen Port.
   bleibt er am Kabel dunkel. Dort zuerst trennen.
 - **MIDI-Geräte** (Launch Control XL, MIDImix, …) kann unter Windows immer nur
   ein Programm gleichzeitig öffnen. Solange PadBridge ein Gerät liest, sieht
-  die DAW es nicht direkt; sie bekommt es über den Port `PadBridge`.
+  die DAW es nicht direkt; sie bekommt es über den Port `PadBridge`. Hält ein
+  anderes Programm das Gerät (DAW, MadMapper), übernimmt PadBridge es von
+  selbst, sobald es dort freigegeben wird.
 - **Tastatur/Maus** gehen als Scancodes raus, also nach Tastenposition wie auf
   Mac und Linux. In Fenster, die als Administrator laufen, kommen sie nicht
   an, außer PadBridge läuft ebenfalls als Administrator.
-- **Virtuelles Gamepad** als Gegenstelle gibt es noch nicht (braucht
-  ViGEmBus). MIDI und Tastatur/Maus von einer Gegenstelle funktionieren.
+- **Virtuelles Gamepad** als Gegenstelle über ViGEmBus (siehe oben). Im
+  Monitor erscheint es nicht als eigener Controller; die Pads der Gegenstelle
+  stehen dort als „Pad n der Gegenstelle“.
 
 ---
 
@@ -226,6 +263,9 @@ Die Oberfläche hat fünf Tabs.
 
 - Zeigt das gewählte Pad live: Sticks, Trigger, alle Tasten. Bei mehreren Pads
   oben auswählen.
+- Pads, die eine Gegenstelle hierher sendet, stehen in derselben Auswahl als
+  **„Pad n der Gegenstelle“**, nur zum Anschauen (Rumble und LEDs stellt der
+  Rechner ein, an dem das Pad hängt).
 - **Rumble:** zwei Regler für den schweren und den leichten Motor, zum Testen.
 - **LED-Ring / Lightbar:** P1–P4, Rotieren, Blinken, Aus, sowie drei
   automatische Modi:
@@ -257,6 +297,14 @@ Die Oberfläche hat fünf Tabs.
 4. Kanal und Deadzones für Sticks und Trigger stehen oben im Tab;
    „Standard“ setzt alles zurück.
 5. Danach klappt MIDI-Learn in der DAW.
+
+**Pads der Gegenstelle als MIDI-Controller:** Normalerweise macht der Rechner
+MIDI, an dem das Pad hängt. Mit „Pads der Gegenstelle hier zu MIDI machen“
+übernimmt das der empfangende Rechner, mit seiner eigenen Belegung: Bei „Pad“
+das „Pad n der Gegenstelle“ wählen, im Bild leuchten dann dessen Tasten, und
+die Belegung lässt sich hier bearbeiten. Praktisch, wenn das Pad an einem
+Rechner hängt, den du nicht einrichten willst. Auf der Gegenstelle dann
+„MIDI senden“ ausschalten, sonst kommt alles doppelt an.
 
 **MIDI-Clock:** In der DAW Clock an **PadBridge** senden. Dann folgen die
 Modi „Clock: Beat“ und „Clock: Takt“ im Monitor dem Tempo. Mit Ziel
@@ -301,16 +349,21 @@ Start und liegt in der Datei `netpad.key` im Einstellungsordner (siehe
 [Teil 7](#7-einstellungen); der Tab **Netzwerk** zeigt den Pfad).
 
 1. Auf dem einen Rechner im Tab **Netzwerk** auf „Schlüssel kopieren“ klicken.
-2. Auf dem anderen Rechner den Schlüssel in dessen `netpad.key` schreiben,
-   zum Beispiel unter Linux:
-   ```sh
-   mkdir -p ~/.config/padbridge
-   install -m 600 /dev/stdin ~/.config/padbridge/netpad.key
-   # Schlüssel einfügen, Enter, dann Ctrl-D
-   ```
-   Auf dem Mac ist es `~/Library/Application Support/PadBridge/netpad.key`,
-   unter Windows `%APPDATA%\PadBridge\netpad.key`.
-3. PadBridge auf diesem Rechner neu starten.
+2. Den Text zum anderen Rechner bringen (zum Beispiel über eine Nachricht an
+   dich selbst) und dort im Tab **Netzwerk** in das Feld „Schlüssel der
+   anderen Seite hier einfügen“ einfügen, dann **Übernehmen**. PadBridge prüft
+   ihn, speichert ihn (den alten als `netpad.key.alt` daneben) und verbindet
+   sofort neu.
+3. Läuft auf diesem Rechner auch der Hintergrund-Dienst (Teil 6), ihn danach
+   neu starten: `systemctl --user restart padbridge`.
+
+Ohne Fenster geht es auch über die Datei, zum Beispiel unter Linux:
+```sh
+install -m 600 /dev/stdin ~/.config/padbridge/netpad.key
+# Schlüssel einfügen, Enter, dann Ctrl-D
+```
+Auf dem Mac ist es `~/Library/Application Support/PadBridge/netpad.key`,
+unter Windows `%APPDATA%\PadBridge\netpad.key`.
 
 ### Senden und empfangen
 
@@ -335,7 +388,8 @@ Beide Rechner können gleichzeitig senden und empfangen.
 
 Auf einer Linux-Gegenstelle erscheint ein **Xbox 360 Controller**, prüfbar mit
 `evtest`, in den KDE-Systemeinstellungen → Gamecontroller oder mit
-`wine control` → Gamecontroller. Das gilt auch für einen PS4-Controller in
+`wine control` → Gamecontroller. Unter Windows (mit ViGEmBus) zeigt ihn
+**Win+R → `joy.cpl`**. Das gilt auch für einen PS4-Controller in
 der Hand: Übers Netz kommen die Werte im Xbox-Format an, und Spiele erkennen
 das virtuelle Xbox-Pad ohne Einrichtung.
 
@@ -346,13 +400,40 @@ sind signiert, aber nicht verschlüsselt. Beispiel mit UFW (Interface und
 Subnetz anpassen, `ip -br a` zeigt sie):
 
 ```sh
-sudo ufw allow in on <lan-interface> from <lan-subnetz>/24 to any port 48100 proto udp
+sudo ufw allow from <lan-subnetz>/24 to any port 48100 proto udp
 sudo ufw allow in on tailscale0 to any port 48100 proto udp     # falls Tailscale
 ```
+
+Das gilt nur für den **empfangenden** Rechner: Senden geht ohne Regel, die
+Antworten der Gegenstelle lässt die Firewall durch. Ubuntu-Systeme wie Zorin
+haben UFW oft schon eingeschaltet (grafisch: „gufw“). Unter Windows genügt es,
+beim ersten Start „private Netzwerke“ zu erlauben.
 
 Unterwegs funktioniert die Verbindung über ein VPN wie Tailscale genauso: als
 Host die Tailscale-Adresse der Gegenstelle eintragen (am besten als eigenes
 Preset).
+
+### Status-Webseite fürs Handy
+
+Im Tab **Netzwerk** unter „Status-Webseite“ einschalten. PadBridge zeigt dann
+Adresse, QR-Code und PIN. Mit dem Handy den QR-Code scannen: Die Seite zeigt
+live Pads (auch die der Gegenstelle), Verbindung und Latenz, virtuelle Pads,
+MIDI-Geräte und das Protokoll. Im Browser „Zum Home-Bildschirm“ macht daraus
+eine App. Die Seite zeigt nur an, steuern lässt sich darüber nichts.
+
+- **Im Heimnetz** (private Adressen wie 192.168.x.x, 10.x.x.x) öffnet sie
+  sich ohne PIN.
+- **Von außerhalb**, zum Beispiel über Tailscale, fragt sie nach der
+  sechsstelligen PIN aus dem Netzwerk-Tab; der Browser merkt sich die
+  Anmeldung. „Neue PIN“ meldet alle Browser ab. Nach fünf falschen Versuchen
+  wartet sie 30 Sekunden.
+- Port 48180 (TCP) muss in der Firewall offen sein, wie 48100 nur fürs LAN
+  oder VPN. Die Seite ist unverschlüsseltes HTTP: **nie** per
+  Portweiterleitung ins Internet stellen.
+
+Läuft PadBridge als Dienst (Teil 6), gilt die Einstellung aus dem Fenster
+nach einem Neustart des Dienstes auch für ihn. So zeigt das Handy den Stand
+eines Rechners ohne Bildschirm.
 
 ### Sunshine/Moonlight
 
@@ -383,9 +464,11 @@ Der Dienst startet `padbridge --headless --listen --receive-only`: ohne
 Fenster, immer empfangsbereit, und er liest keine Pads an diesem Rechner. So
 kann das Fenster daneben laufen, ohne dass MIDI doppelt ankommt.
 
-> Läuft der Dienst, belegt er Port 48100. Im Fenster daneben „Empfangen“
-> auslassen, sonst meldet es „Port 48100 nicht verfügbar“. Pads am Rechner,
-> MIDI und Senden macht das Fenster wie gewohnt.
+Öffnest du daneben das Fenster, **übernimmt es das Empfangen**: Der Dienst
+pausiert, und das Fenster zeigt alles von der Gegenstelle (Pads, MIDI-Geräte,
+virtuelle Pads). Schließt du das Fenster, empfängt nach ein, zwei Sekunden
+wieder der Dienst. Dabei werden die virtuellen Pads einmal neu angelegt; ein
+laufendes Spiel sieht das wie kurzes Aus- und Einstecken.
 
 Startoptionen (`padbridge --help`):
 
@@ -436,6 +519,7 @@ Prüfen ohne DAW: `aseqdump -p PadBridge` oder `amidi -p hw:9,0 -d`.
 | `netpad.json` | Netzwerk: Host, Port, Rumble, Empfangen, Host-Presets |
 | `keymouse.json` | Tastatur/Maus-Belegung |
 | `surfaces.json` | MIDI-Geräte: Umbelegung und LEDs |
+| `web.json` | Status-Webseite: an/aus, Port, PIN |
 | `netpad.key` | geheimer Schlüssel fürs Netzwerk (wird beim ersten Start erzeugt, `chmod 600`) |
 
 Die Dateien sind mit der alten Swift-App und `padbridge-netpad` kompatibel.
@@ -452,8 +536,11 @@ auch den Schlüssel. Die Gegenstelle muss dann nicht neu gekoppelt werden.
 | Monitor zeigt keinen Controller (Linux) | Benutzer nicht in der Gruppe `input`, oder seit dem Hinzufügen nicht neu angemeldet. |
 | PS4-Controller erscheint am Mac als „(Bluetooth)“, obwohl er am Kabel hängt | Das Kabel lädt nur. Ein Datenkabel nehmen oder Bluetooth trennen (PS-Taste 10 s halten). |
 | LED-Ring / Lightbar „Nicht verfügbar“ (Linux) | udev-Regel aus Teil 2 fehlt; nach dem Einrichten das Pad neu einstecken. |
-| Status orange „keine Antwort“ | Auf der Gegenstelle ist „Empfangen“ aus oder PadBridge läuft nicht, die Firewall blockiert, falscher Host/Port oder falscher Schlüssel. Pakete mit falscher Signatur werden stillschweigend verworfen: Schlüssel neu kopieren und beide Seiten neu starten. |
-| „Port 48100 nicht verfügbar“ | Ein anderes PadBridge (Dienst, zweites Fenster) oder der alte `padbridge-netpad` belegt den Port. Dort „Empfangen“ ausschalten. |
+| Status orange „keine Antwort“ | Auf der Gegenstelle ist „Empfangen“ aus oder PadBridge läuft nicht, die Firewall blockiert, falscher Host/Port oder **verschiedene Schlüssel** (der häufigste Fall bei einer neuen Installation, die ihren eigenen erzeugt hat). Pakete mit falscher Signatur werden stillschweigend verworfen: Schlüssel kopieren und auf der anderen Seite einfügen (Teil 5). |
+| „Port 48100 nicht verfügbar“ | Der alte `padbridge-netpad` oder ein älteres PadBridge belegt den Port. Ein Dienst ab 0.5 gibt ihn dem Fenster selbst ab. |
+| Zweiter Start öffnet kein zweites Fenster | Gewollt: Es holt das schon offene Fenster nach vorne. |
+| „ViGEmBus ist nicht installiert“ (Windows) | Den Treiber installieren (Teil 3). MIDI und Tastatur/Maus gehen auch ohne. |
+| Status-Webseite lädt nicht | Firewall: TCP 48180 freigeben (Windows: beim ersten Start private Netzwerke erlauben). Handy und Rechner müssen im selben Netz oder über Tailscale verbunden sein. |
 | Pad auf Linux fehlt | Keine Schreibrechte auf `/dev/uinput` (Gruppe `input`, neu anmelden). |
 | Zwei Pads im Spiel | Gamepad-Support in Moonlight ausschalten. |
 | Bitwig sieht kein MIDI | snd-virmidi laden (Teil 6) und **VirMIDI** wählen, nicht „PadBridge“. |
@@ -472,7 +559,9 @@ auch den Schlüssel. Die Gegenstelle muss dann nicht neu gekoppelt werden.
 - Die Pakete sind **nicht verschlüsselt**. Wer im Netz mithört, sieht die
   Eingaben. Darum nur im LAN oder über ein VPN wie Tailscale betreiben und den
   Port nie ins Internet freigeben.
-- Der Schlüssel gehört nicht ins Repository und in keinen Chat. Einen neuen
+- Die Status-Webseite zeigt nur an. Außerhalb des Heimnetzes verlangt sie
+  eine PIN; sie ist aber unverschlüsseltes HTTP und gehört nicht ins Internet.
+- Der Schlüssel gehört nicht ins Repository und in keinen öffentlichen Chat. Einen neuen
   Schlüssel bekommst du, indem du `netpad.key` löschst und PadBridge neu
   startest. Danach muss er neu auf die Gegenstelle.
 

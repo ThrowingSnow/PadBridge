@@ -6,6 +6,41 @@ versioned separately by its magic (`PBG1` = protocol v1).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-21
+
+### Added
+- Windows: a peer's pad becomes a virtual Xbox 360 controller through the
+  ViGEmBus driver; game rumble goes back to the pad in hand. The virtual pad
+  is kept out of the local pad list, so it is not sent back.
+- Monitor and MIDI tab list the pads a peer sends here ("Pad n der
+  Gegenstelle") live, also on macOS. New option "Pads der Gegenstelle hier zu
+  MIDI machen": the receiver turns them into MIDI with its own mapping, edited
+  in the picture view; silence releases held notes.
+- Status web page for phones (Netzwerk tab, off by default, TCP 48180): pads
+  with live sticks and buttons, link, latency, virtual pads, MIDI devices,
+  clock and log, over Server-Sent Events; QR code in the app, installable to
+  the home screen. Open in the home network; from elsewhere (e.g. Tailscale)
+  it asks for a six-digit PIN and keeps a session cookie, with a lockout after
+  five wrong tries. Settings in `web.json`.
+- Paste the other side's network key in the Netzwerk tab ("Übernehmen")
+  instead of editing `netpad.key`; the previous key is kept as
+  `netpad.key.alt`.
+- A window opened next to the background service takes over receiving while
+  it is open, so it shows everything from the peer; the service resumes when
+  the window closes.
+- A second start of the window brings the running one to the front instead
+  of running twice.
+- `scripts/build-linux.sh`: portable Linux build in Ubuntu 20.04 (Docker).
+
+### Fixed
+- Linux release binary: built on Arch it needed glibc 2.43 and did not start
+  on Ubuntu-based systems; it now needs glibc 2.30 at most.
+- Windows: a MIDI device held by another app (DAW, MadMapper) is taken over
+  as soon as it is free, instead of only after replugging.
+- A receiver whose port is taken retries every two seconds instead of giving
+  up.
+- Docs: Ubuntu's `cargo` package is too old to build PadBridge; use rustup.
+
 ## [0.5.0-beta.1] - 2026-10-20
 
 ### Added

@@ -17,9 +17,11 @@ app/     padbridge: engine thread + egui UI (glow/OpenGL, so it runs on Macs
   platform/macos  libusb Xbox 360 pads, hidapi DualShock 4, CoreMIDI ports,
                   CGEvent keyboard/mouse
   platform/windows XInput pads, SendInput keyboard/mouse, MIDI via midir (WinMM),
-                  "PadBridge" port = a loopMIDI port of that name
+                  "PadBridge" port = a loopMIDI port of that name, ViGEmBus pad
   platform/hid_pads.rs  hidapi DualShock 4, shared by macOS and Windows
   ui/pad_map.rs   MIDI tab picture view (pad outline with a field per control)
+  ui/single.rs    one window per user (a second start brings it to the front)
+  web/            status page for phones (std HTTP server, Server-Sent Events)
   platform/stub   placeholder for other systems
 spike/   stage-0 feasibility test for macOS 10.13 (egui/glow + libusb + CoreMIDI)
 ```
@@ -48,5 +50,8 @@ scripts/build-windows.sh                    # Windows .exe, cross-built (mingw-w
 - [x] MIDI tab picture view
 - [x] Stage 4: MIDI devices tab, forward MIDI controllers per device over the network
 - [x] Windows: XInput and HID pads, SendInput, WinMM MIDI, loopMIDI port
-- [ ] Windows: virtual game pad (ViGEmBus)
+- [x] Windows: virtual game pad (ViGEmBus)
+- [x] Peer's pads in the monitor and MIDI tab, MIDI from them on the receiver
+- [x] Status web page; window takes over receiving from the service
+- [x] Portable Linux build (Ubuntu 20.04 in Docker, glibc 2.30)
 - [ ] Retire the Swift app and padbridge-netpad

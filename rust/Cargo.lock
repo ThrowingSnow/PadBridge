@@ -1787,7 +1787,7 @@ dependencies = [
 
 [[package]]
 name = "padbridge"
-version = "0.5.0-beta.1"
+version = "0.5.0"
 dependencies = [
  "alsa",
  "core-foundation 0.9.4",
@@ -1808,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "padbridge-core"
-version = "0.5.0-beta.1"
+version = "0.5.0"
 dependencies = [
  "getrandom 0.2.17",
  "hmac",
