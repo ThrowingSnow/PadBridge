@@ -40,6 +40,20 @@ fn main() {
         }
     }
 
+    // A second window would fight the first over ports and pads: bring the
+    // running one to the front instead, before opening anything.
+    let guard = if headless {
+        None
+    } else {
+        match ui::single::claim() {
+            Ok(guard) => guard,
+            Err(()) => {
+                eprintln!("padbridge: läuft schon, das Fenster wurde nach vorne geholt");
+                return;
+            }
+        }
+    };
+
     options.service = headless;
     let handle = engine::Engine::spawn(options);
     if headless {
@@ -48,7 +62,7 @@ fn main() {
             std::thread::park();
         }
     }
-    if let Err(e) = ui::run(handle) {
+    if let Err(e) = ui::run(handle, guard) {
         eprintln!("padbridge: window failed: {e}");
         std::process::exit(1);
     }

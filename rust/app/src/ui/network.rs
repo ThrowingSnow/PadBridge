@@ -1,4 +1,5 @@
 use eframe::egui;
+use padbridge_core::key::NetKey;
 use padbridge_core::settings::{self, HostPreset};
 use qrcode::{Color, QrCode};
 
@@ -74,6 +75,29 @@ impl App {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.key_input)
+                    .hint_text("Schlüssel der anderen Seite hier einfügen")
+                    .password(true)
+                    .desired_width(300.0),
+            );
+            let key = NetKey::parse(&self.key_input);
+            if ui.add_enabled(key.is_some(), egui::Button::new("Übernehmen")).clicked() {
+                if let Some(key) = key {
+                    self.handle.send(Command::SetKey(key));
+                    self.key_input.clear();
+                }
+            }
+            if !self.key_input.trim().is_empty() && NetKey::parse(&self.key_input).is_none() {
+                status(ui, ORANGE, "kein gültiger Schlüssel (64 Zeichen 0-9, a-f)");
+            }
+        });
+        hint(
+            ui,
+            "Auf einem Rechner „Schlüssel kopieren“, auf dem anderen hier einfügen und übernehmen. \
+             Ein Hintergrund-Dienst auf diesem Rechner braucht danach einen Neustart.",
+        );
         hint(ui, "Port nur im LAN oder per VPN (z.B. Tailscale) freigeben, nie ins Internet: signiert, aber nicht verschlüsselt.");
         hint(
             ui,

@@ -57,6 +57,8 @@ pub enum Command {
     SetWeb(WebSettings),
     /// A new random PIN for the status page.
     NewWebPin,
+    /// The other side's network key, pasted in the window.
+    SetKey(NetKey),
     Rumble { id: String, low: f32, high: f32 },
     Indicator(PlayerIndicator),
     RingMode(RingMode),
@@ -908,6 +910,10 @@ impl Engine {
                     self.reconcile_web();
                 }
             }
+            Command::SetKey(key) => {
+                self.set_key(key);
+                return;
+            }
             Command::NewWebPin => {
                 self.web.pin = web_auth::new_pin();
                 self.web_server = None;
@@ -1156,6 +1162,34 @@ impl Engine {
                 self.receiver_retry_at = Some(Instant::now() + RECEIVER_RETRY);
             }
         }
+    }
+
+    /// Saves a pasted key (the previous one stays as `netpad.key.alt`) and
+    /// reopens everything signed with it.
+    fn set_key(&mut self, key: NetKey) {
+        if self.key.as_ref() == Some(&key) {
+            self.log("Netzwerk: Das ist schon der Schlüssel dieses Rechners".into());
+            return;
+        }
+        let dir = settings::config_dir();
+        let _ = std::fs::rename(dir.join(settings::KEY_FILE), dir.join(format!("{}.alt", settings::KEY_FILE)));
+        if let Err(e) = key.save(&dir) {
+            self.log(format!("Netzwerk: Schlüssel nicht gespeichert ({e})"));
+            return;
+        }
+        self.shared.lock().unwrap().key_hex = Some(key.to_hex());
+        self.key = Some(key);
+        self.close_link();
+        self.reconcile_link();
+        self.receiver = None;
+        self.reconcile_receiver();
+        // The page's session cookie is derived from the key.
+        if self.web_server.is_some() {
+            self.web_server = None;
+            self.reconcile_web();
+        }
+        self.log("Netzwerk: neuer Schlüssel übernommen (der alte liegt als netpad.key.alt daneben)".into());
+        self.changed = true;
     }
 
     /// Starts or stops the status page to match the settings.

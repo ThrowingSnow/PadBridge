@@ -7,6 +7,7 @@ mod midi;
 mod monitor;
 mod network;
 mod pad_map;
+pub mod single;
 mod surfaces;
 
 use std::time::Duration;
@@ -48,9 +49,12 @@ pub struct App {
     surfaces: SurfaceMapping,
     /// Devices listed last frame, to switch to one that was just plugged in.
     surfaces_seen: Vec<String>,
+    /// Netzwerk tab: the other side's key being pasted.
+    key_input: String,
 }
 
-pub fn run(handle: Handle) -> eframe::Result {
+/// `guard`: from `single::claim`, answers a second start while this window is open.
+pub fn run(handle: Handle, guard: Option<std::net::TcpListener>) -> eframe::Result {
     let snap = handle.snapshot();
     let app = App {
         midi: snap.midi.clone(),
@@ -68,6 +72,7 @@ pub fn run(handle: Handle) -> eframe::Result {
         pad_look: None,
         surface: None,
         surfaces_seen: Vec::new(),
+        key_input: String::new(),
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -77,7 +82,16 @@ pub fn run(handle: Handle) -> eframe::Result {
             .with_min_inner_size([760.0, 520.0]),
         ..Default::default()
     };
-    eframe::run_native("PadBridge", options, Box::new(|_cc| Ok(Box::new(app))))
+    eframe::run_native(
+        "PadBridge",
+        options,
+        Box::new(|cc| {
+            if let Some(listener) = guard {
+                single::serve(listener, cc.egui_ctx.clone());
+            }
+            Ok(Box::new(app))
+        }),
+    )
 }
 
 impl eframe::App for App {
