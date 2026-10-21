@@ -124,7 +124,7 @@ impl Model {
             Model::LaunchControlXl => (660.0, 424.0),
             Model::MidiMix => (660.0, 440.0),
             Model::ApcMiniMk2 => (660.0, 540.0),
-            Model::XoneK2 => (300.0, 750.0),
+            Model::XoneK2 => (300.0, 770.0),
         }
     }
 
@@ -520,10 +520,9 @@ fn k2_controls() -> Vec<Ctl> {
     };
     let mut out = Vec::new();
     for c in 0..4 {
-        out.push(base(CtlKind::Encoder, false, K2_ENCODERS + c as u8, format!("Encoder {}", c + 1), None, (x(c), 44.0), (44.0, 44.0)));
-        let mut push = base(CtlKind::Button, true, K2_ENCODER_PUSH + c as u8, format!("Encoder {} Push", c + 1), Some(c), (x(c), 86.0), (40.0, 16.0));
-        push.caption = Some("Push");
-        out.push(push);
+        out.push(base(CtlKind::Encoder, false, K2_ENCODERS + c as u8, format!("Encoder {}", c + 1), None, (x(c), 38.0), (40.0, 40.0)));
+        // Too small for a caption next to the note; the name shows when clicked.
+        out.push(base(CtlKind::Button, true, K2_ENCODER_PUSH + c as u8, format!("Encoder {} Push", c + 1), Some(c), (x(c), 88.0), (40.0, 18.0)));
     }
     for row in 0..3 {
         for c in 0..4 {
@@ -548,15 +547,13 @@ fn k2_controls() -> Vec<Ctl> {
     }
     for (i, (at_x, cc, push)) in [(x(0), 20u8, 13u8), (x(3), 21, 14)].into_iter().enumerate() {
         let side = if i == 0 { "links" } else { "rechts" };
-        out.push(base(CtlKind::Encoder, false, cc, format!("Encoder unten {side}"), None, (at_x, 694.0), (40.0, 40.0)));
-        let mut p = base(CtlKind::Button, true, push, format!("Encoder unten {side} Push"), None, (at_x, 732.0), (36.0, 14.0));
-        p.caption = Some("Push");
-        out.push(p);
+        out.push(base(CtlKind::Encoder, false, cc, format!("Encoder unten {side}"), None, (at_x, 690.0), (40.0, 40.0)));
+        out.push(base(CtlKind::Button, true, push, format!("Encoder unten {side} Push"), None, (at_x, 742.0), (40.0, 18.0)));
     }
-    let mut layer = base(CtlKind::Button, true, K2_LAYER, "Layer".into(), Some(K2_LAYER_LED), (x(1), 694.0), (50.0, 26.0));
+    let mut layer = base(CtlKind::Button, true, K2_LAYER, "Layer".into(), Some(K2_LAYER_LED), (x(1), 690.0), (50.0, 28.0));
     layer.caption = Some("Layer");
     out.push(layer);
-    let mut exit = base(CtlKind::Button, true, K2_EXIT, "Exit Setup".into(), Some(K2_EXIT_LED), (x(2), 694.0), (50.0, 26.0));
+    let mut exit = base(CtlKind::Button, true, K2_EXIT, "Exit Setup".into(), Some(K2_EXIT_LED), (x(2), 690.0), (50.0, 28.0));
     exit.caption = Some("Exit");
     exit.led_hint = Some("Diese Taste hat nur eine LED-Farbe.");
     out.push(exit);
