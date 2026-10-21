@@ -6,6 +6,24 @@ versioned separately by its magic (`PBG1` = protocol v1).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-21
+
+### Added
+- Allen & Heath Xone:K2 in the MIDI devices tab: drawing with live values,
+  remapping, LEDs red/amber/green (map as in Mixxx).
+- Ableton Push 2 in the MIDI devices tab: 64 pads with velocity, tempo,
+  swing, track and master encoders, touch strip, all buttons; remapping; pad
+  LEDs red/green/white, button LEDs on/off. CC map from Ableton's
+  documentation, positions and encoder touch notes measured on the device.
+- Endless encoders get their own drawing (a ring that lights up while
+  turning and the last step) instead of a made-up position.
+- Button LEDs have two states, pressed (or on) and at rest, each off or a
+  colour and dimmed where the device can: always on, a different colour on
+  press, or brighter on press.
+- `scripts/build-remote.sh <host>` builds the Linux and Windows release files
+  on another machine with Docker; `build-windows.sh` falls back to Docker.
+- `examples/midi_probe` prints what a controller sends, for mapping new ones.
+
 ## [0.5.0] - 2026-10-21
 
 ### Added

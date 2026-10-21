@@ -56,4 +56,5 @@ scripts/build-remote.sh <ssh-host>          # Linux + Windows on another machine
 - [x] Peer's pads in the monitor and MIDI tab, MIDI from them on the receiver
 - [x] Status web page; window takes over receiving from the service
 - [x] Portable Linux build (Ubuntu 20.04 in Docker, glibc 2.30)
+- [x] Xone:K2 and Push 2, endless encoders, button LEDs at rest and pressed
 - [ ] Retire the Swift app and padbridge-netpad

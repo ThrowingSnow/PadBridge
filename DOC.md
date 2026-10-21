@@ -314,13 +314,27 @@ Pad.
 ### MIDI-Geräte
 
 Hier erscheinen die MIDI-Controller am Rechner (Novation Launch Control XL,
-Akai MIDImix und APC mini mk2, Elektron Digitakt II, andere als Liste). Für
-die bekannten Geräte zeigt PadBridge eine Zeichnung mit allen Werten live.
+Akai MIDImix und APC mini mk2, Allen & Heath Xone:K2, Ableton Push 2,
+Elektron Digitakt II, andere als Liste). Für die bekannten Geräte zeigt
+PadBridge eine Zeichnung mit allen Werten live.
 
 - **Umbelegen:** pro Regler oder Taste CC/Note, Nummer, Kanal und
   Momentary/Toggle. Das Ergebnis kommt über den Port **PadBridge** heraus.
-- **LEDs:** Farbe und Helligkeit pro Control (Launch Control XL, APC mini) oder
-  an/aus (MIDImix); Toggles leuchten.
+- **LEDs von Reglern:** Farbe, Helligkeit, „Mitte hell“ oder Ampel
+  (Launch Control XL).
+- **LEDs von Tasten:** zwei Zustände, **gedrückt** (bzw. **an** bei Toggle) und
+  **in Ruhe**, jeweils aus oder eine Farbe, wo möglich gedimmt. Dieselbe
+  Einstellung in beiden Zeilen hält die Taste immer an; eine andere Farbe oder
+  eine gedimmte Ruhe lässt sie beim Drücken wechseln. Was geht, hängt vom
+  Gerät ab: Launch Control XL Rot/Amber/Gelb/Grün mit Dimmen, APC mini Pads
+  Farben mit Dimmen, Xone:K2 Rot/Amber/Grün, Push 2 Pads Rot/Grün/Weiß und
+  Tasten an/aus, MIDImix und einfarbige Tasten an/aus.
+- **Endlos-Encoder** (K2, Push 2) haben keine Position; die Zeichnung zeigt
+  beim Drehen einen leuchtenden Ring und den letzten Schritt („+2“, „−1“). In
+  der DAW als relativen Encoder einstellen.
+- **Push 2:** gezeichnet wird der „Live Port“. Läuft Ableton Live mit dem Push
+  als Control Surface, steuert Live die LEDs und das Display; PadBridge zeigt
+  dann nur an. Das Display des Push 2 läuft nicht über MIDI und bleibt leer.
 - **Übers Netz:** Ein Gerät kann seine umbelegten Werte an die Gegenstelle
   schicken. Dort kommen sie auf einem eigenen Port „PadBridge <Gerät>“ an
   (unter Windows als loopMIDI-Port mit diesem Namen anlegen, Teil 3).

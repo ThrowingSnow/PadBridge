@@ -30,8 +30,10 @@ Supported pads:
   ![MIDI tab: the pad outline with a CC or note field on every control](docs/images/midi-picture.png)
 
 - **MIDI devices**: PadBridge listens to MIDI controllers such as the
-  Novation Launch Control XL, Akai MIDImix or APC mini mk2: a live drawing of
-  the device, remapping, LED colours, and forwarding to the other computer.
+  Novation Launch Control XL, Akai MIDImix, APC mini mk2, Allen & Heath
+  Xone:K2 and Ableton Push 2: a live drawing of the device, remapping, LED
+  colours (per button at rest and when pressed, dimmed where the device can),
+  and forwarding to the other computer.
 - **MIDI clock in**: send clock to "PadBridge" and the LED ring (or the PS4
   light bar) blinks on the beat or steps through the bars.
 - **Keyboard/mouse**: buttons become keys, a stick becomes the mouse.
