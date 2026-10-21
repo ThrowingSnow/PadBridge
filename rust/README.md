@@ -1,7 +1,7 @@
 # PadBridge (Rust)
 
 One code base for Linux, macOS (10.13+) and Windows, replacing the Swift app and the
-`padbridge-netpad` daemon. Setup for users: [../DOC.md](../DOC.md) (German).
+`padbridge-netpad` daemon. Setup for users: [../DOC.md](../DOC.md) (German: [../DOC.de.md](../DOC.de.md)).
 
 ```
 core/    padbridge-core: controls, state, MIDI and keyboard/mouse mapping, MIDI

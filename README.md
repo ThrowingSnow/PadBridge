@@ -138,7 +138,7 @@ scripts/build-linux.sh               # portable Linux binary (Docker)
 ```
 
 Step-by-step setup, troubleshooting and the udev rules are in
-**[DOC.md](DOC.md)** (German).
+**[DOC.md](DOC.md)** (German version: [DOC.de.md](DOC.de.md)).
 
 The user interface is in German for now.
 

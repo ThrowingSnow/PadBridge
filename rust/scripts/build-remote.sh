@@ -31,7 +31,7 @@ REMOTE
 mkdir -p target/dist
 rsync -a --delete "$HOST:padbridge-build/target/dist/" target/dist/
 # Docs and licence live one level above rust/.
-cp ../DOC.md ../README.md ../LICENSE "target/dist/$NAME/"
+cp ../DOC.md ../DOC.de.md ../README.md ../LICENSE "target/dist/$NAME/"
 
 # Neutral owner in the archive (not the build user), no macOS metadata.
 cd target/dist
