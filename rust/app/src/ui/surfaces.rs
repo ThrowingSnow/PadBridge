@@ -277,7 +277,12 @@ impl Painter<'_> {
 /// The front panel; returns true when a setting changed.
 fn surface_view(ui: &mut egui::Ui, model: Model, input: &MidiInputView, mapping: &mut DeviceMapping) -> bool {
     let body = Vec2::new(model.body().0, model.body().1);
-    let s = (ui.available_width() / body.x).clamp(0.6, 1.5);
+    let mut s = ui.available_width() / body.x;
+    if body.y > body.x {
+        // Upright devices (Xone:K2) would grow taller than the window.
+        s = s.min(720.0 / body.y);
+    }
+    let s = s.clamp(0.6, 1.5);
     let (rect, _) = ui.allocate_exact_size(body * s, Sense::hover());
     let painter = ui.painter_at(rect);
     let d = Painter { p: &painter, origin: rect.min, s };
@@ -305,6 +310,7 @@ fn surface_view(ui: &mut egui::Ui, model: Model, input: &MidiInputView, mapping:
         };
         match ctl.kind {
             CtlKind::Knob => knob(&d, r, &input.state, key, &look),
+            CtlKind::Encoder => encoder(&d, r, &input.state, key, &look),
             CtlKind::Fader => fader(&d, r, &input.state, key, &look),
             CtlKind::Button => button(&d, r, &input.state, key, &look, &ctl),
         }
@@ -345,6 +351,9 @@ fn binding_editor(ui: &mut egui::Ui, model: Model, ctl: &Ctl, key: SurfaceKey, m
     let button = ctl.is_button();
     ui.strong(&ctl.name);
     hint(ui, format!("Gerät sendet {}", key_name(key)));
+    if ctl.kind == CtlKind::Encoder {
+        hint(ui, "Endlos-Encoder: sendet Schritte (1–63 rechts, 127–64 links), die DAW muss ihn als relativ kennen.");
+    }
     let b = mapping.binding_mut(key, button);
     ui.horizontal(|ui| {
         if button {
@@ -525,6 +534,31 @@ fn knob(d: &Painter, r: Rect, st: &SurfaceState, key: SurfaceKey, look: &Look) {
     d.p.text(c, Align2::CENTER_CENTER, look.out_label(key), d.font(8.0), Color32::from_gray(140));
     if let Some(v) = st.get(key) {
         d.p.text(c + Vec2::new(0.0, radius * 1.22), Align2::CENTER_CENTER, v.value.to_string(), d.font(8.5), Color32::from_gray(190));
+    }
+}
+
+/// An endless encoder has no position: a closed ring that lights up while it
+/// turns, and the last step ("+2", "−1") underneath.
+fn encoder(d: &Painter, r: Rect, st: &SurfaceState, key: SurfaceKey, look: &Look) {
+    let c = r.center();
+    let radius = r.width() / 2.0;
+    d.p.circle_filled(c, radius * 0.72, Color32::from_gray(50));
+    if look.hovered {
+        d.p.circle_stroke(c, radius * 0.72, look.edge());
+    }
+    let ring = match look.flash {
+        Some(f) => blend(Color32::from_gray(65), look.accent(64), f),
+        None => Color32::from_gray(65),
+    };
+    d.p.circle_stroke(c, radius * 0.9, Stroke::new(3.0 * d.s, ring));
+    d.p.text(c, Align2::CENTER_CENTER, look.out_label(key), d.font(8.0), Color32::from_gray(140));
+    if let Some(v) = st.get(key) {
+        let step = match v.value {
+            0 => "0".to_string(),
+            n @ 1..=63 => format!("+{n}"),
+            n => format!("−{}", 128 - n as u16),
+        };
+        d.p.text(c + Vec2::new(0.0, radius * 1.22), Align2::CENTER_CENTER, step, d.font(8.5), Color32::from_gray(190));
     }
 }
 

@@ -11,6 +11,11 @@
 //! - Akai APC mini mk2: channel 1. RGB pads take a note on whose velocity
 //!   picks a palette colour and whose channel the brightness (1-7 = 10-100 %);
 //!   the red track and green scene buttons take velocity 1 for on.
+//! - Allen & Heath Xone:K2: one channel, set on the device (factory 15).
+//!   Endless encoders send relative values (1 right, 127 left). Every button
+//!   LED is red, amber or green: a note on to the button's note +0, +36 or
+//!   +72; a note off to its note turns it off. The Layer button uses notes
+//!   12/16/20 for its colours. Map as in Mixxx's K2 mapping.
 
 use std::collections::BTreeSet;
 
@@ -22,11 +27,14 @@ pub enum Model {
     LaunchControlXl,
     MidiMix,
     ApcMiniMk2,
+    XoneK2,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CtlKind {
     Knob,
+    /// Endless: sends steps (1..=63 right, 127..=64 left), not a position.
+    Encoder,
     Fader,
     Button,
 }
@@ -84,6 +92,8 @@ impl Model {
         } else if lower.contains("apc mini mk2") && !lower.contains("notes") {
             // Its second port only carries the Drum/Note modes.
             Some(Model::ApcMiniMk2)
+        } else if lower.contains("xone:k2") || lower.contains("xone k2") {
+            Some(Model::XoneK2)
         } else {
             None
         }
@@ -94,6 +104,7 @@ impl Model {
         match self {
             Model::LaunchControlXl => 8, // factory template 1, the power-on default
             Model::MidiMix | Model::ApcMiniMk2 => 0,
+            Model::XoneK2 => 14,
         }
     }
 
@@ -103,6 +114,7 @@ impl Model {
             Model::LaunchControlXl => true,
             Model::MidiMix => false,
             Model::ApcMiniMk2 => index < 64,
+            Model::XoneK2 => index != K2_EXIT_LED,
         }
     }
 
@@ -112,6 +124,7 @@ impl Model {
             Model::LaunchControlXl => (660.0, 424.0),
             Model::MidiMix => (660.0, 440.0),
             Model::ApcMiniMk2 => (660.0, 540.0),
+            Model::XoneK2 => (300.0, 750.0),
         }
     }
 
@@ -120,7 +133,7 @@ impl Model {
         match self {
             Model::LaunchControlXl if channel < 8 => Some(format!("User {}", channel + 1)),
             Model::LaunchControlXl => Some(format!("Factory {}", channel - 7)),
-            Model::MidiMix | Model::ApcMiniMk2 => None,
+            Model::MidiMix | Model::ApcMiniMk2 | Model::XoneK2 => None,
         }
     }
 
@@ -149,6 +162,7 @@ impl Model {
                 c("Master", 590.0, 238.0, true),
             ],
             Model::ApcMiniMk2 => vec![c("Scene Launch", APC_SIDE_X, 14.0, true), c("Master", APC_SIDE_X, 368.0, true)],
+            Model::XoneK2 => vec![],
         }
     }
 
@@ -157,6 +171,7 @@ impl Model {
             Model::LaunchControlXl => lcxl_controls(),
             Model::MidiMix => midimix_controls(),
             Model::ApcMiniMk2 => apc_controls(),
+            Model::XoneK2 => k2_controls(),
         }
     }
 
@@ -165,6 +180,7 @@ impl Model {
             Model::LaunchControlXl => 48,
             Model::MidiMix => 18,
             Model::ApcMiniMk2 => 80,
+            Model::XoneK2 => K2_EXIT_LED + 1,
         }
     }
 
@@ -174,6 +190,7 @@ impl Model {
             Model::LaunchControlXl => vec![0xF0, 0x00, 0x20, 0x29, 0x02, 0x11, 0x78, channel & 0x0F, index as u8, value, 0xF7],
             Model::MidiMix => vec![0x90 | (channel & 0x0F), MIX_LED_NOTES[index], value],
             Model::ApcMiniMk2 => apc_led_message(index, value),
+            Model::XoneK2 => k2_led_message(channel, index, value),
         }
     }
 
@@ -181,7 +198,9 @@ impl Model {
     pub fn reset(self, channel: u8) -> Vec<Vec<u8>> {
         match self {
             Model::LaunchControlXl => vec![vec![0xB0 | (channel & 0x0F), 0, 0]],
-            Model::MidiMix | Model::ApcMiniMk2 => (0..self.led_count()).map(|i| self.led_message(channel, i, 0)).collect(),
+            Model::MidiMix | Model::ApcMiniMk2 | Model::XoneK2 => {
+                (0..self.led_count()).map(|i| self.led_message(channel, i, 0)).collect()
+            }
         }
     }
 
@@ -227,6 +246,13 @@ impl Model {
             }
             // Packed; `apc_led_message` turns it into colour and brightness.
             Model::ApcMiniMk2 => red.min(3) * 4 + green.min(3),
+            // 0 off, 1 red, 2 amber, 3 green; the K2 has no brightness.
+            Model::XoneK2 => match (red > 0, green > 0) {
+                (false, false) => 0,
+                (true, false) => 1,
+                (true, true) => 2,
+                (false, true) => 3,
+            },
         }
     }
 }
@@ -463,6 +489,103 @@ fn apc_led_message(index: usize, value: u8) -> Vec<u8> {
     }
 }
 
+// Xone:K2 notes and CCs (factory layout), columns left to right.
+const K2_ENCODERS: u8 = 0; // CC 0-3, push notes 52-55
+const K2_ENCODER_PUSH: u8 = 52;
+const K2_KNOBS: u8 = 4; // CC 4-15, three rows of four
+const K2_FADERS: u8 = 16; // CC 16-19
+/// The three button rows under the knobs, top to bottom.
+const K2_TOP_ROWS: [u8; 3] = [48, 44, 40];
+/// The 4x4 grid under the faders, top to bottom.
+const K2_GRID_ROWS: [u8; 4] = [36, 32, 28, 24];
+const K2_LAYER: u8 = 12;
+const K2_EXIT: u8 = 15;
+/// LEDs: 0-3 encoder push, 4-15 top buttons, 16-31 grid, 32 layer, 33 exit.
+const K2_LAYER_LED: usize = 32;
+const K2_EXIT_LED: usize = 33;
+
+fn k2_controls() -> Vec<Ctl> {
+    let x = |c: usize| 60.0 + c as f32 * 60.0;
+    let base = |kind, note, number, name: String, led, at, size| Ctl {
+        kind,
+        note,
+        number,
+        name,
+        led,
+        at,
+        size,
+        caption: None,
+        arrow: None,
+        led_hint: None,
+    };
+    let mut out = Vec::new();
+    for c in 0..4 {
+        out.push(base(CtlKind::Encoder, false, K2_ENCODERS + c as u8, format!("Encoder {}", c + 1), None, (x(c), 44.0), (44.0, 44.0)));
+        let mut push = base(CtlKind::Button, true, K2_ENCODER_PUSH + c as u8, format!("Encoder {} Push", c + 1), Some(c), (x(c), 86.0), (40.0, 16.0));
+        push.caption = Some("Push");
+        out.push(push);
+    }
+    for row in 0..3 {
+        for c in 0..4 {
+            let n = row * 4 + c;
+            out.push(base(CtlKind::Knob, false, K2_KNOBS + n as u8, format!("Poti {}", n + 1), None, (x(c), 132.0 + row as f32 * 50.0), (40.0, 40.0)));
+        }
+    }
+    for (row, first) in K2_TOP_ROWS.into_iter().enumerate() {
+        for c in 0..4 {
+            let n = row * 4 + c;
+            out.push(base(CtlKind::Button, true, first + c as u8, format!("Taste {}", n + 1), Some(4 + n), (x(c), 286.0 + row as f32 * 32.0), (46.0, 24.0)));
+        }
+    }
+    for c in 0..4 {
+        out.push(base(CtlKind::Fader, false, K2_FADERS + c as u8, format!("Fader {}", c + 1), None, (x(c), 450.0), (28.0, 130.0)));
+    }
+    for (row, first) in K2_GRID_ROWS.into_iter().enumerate() {
+        for c in 0..4 {
+            let n = row * 4 + c;
+            out.push(base(CtlKind::Button, true, first + c as u8, format!("Raster {}", n + 1), Some(16 + n), (x(c), 548.0 + row as f32 * 32.0), (46.0, 24.0)));
+        }
+    }
+    for (i, (at_x, cc, push)) in [(x(0), 20u8, 13u8), (x(3), 21, 14)].into_iter().enumerate() {
+        let side = if i == 0 { "links" } else { "rechts" };
+        out.push(base(CtlKind::Encoder, false, cc, format!("Encoder unten {side}"), None, (at_x, 694.0), (40.0, 40.0)));
+        let mut p = base(CtlKind::Button, true, push, format!("Encoder unten {side} Push"), None, (at_x, 732.0), (36.0, 14.0));
+        p.caption = Some("Push");
+        out.push(p);
+    }
+    let mut layer = base(CtlKind::Button, true, K2_LAYER, "Layer".into(), Some(K2_LAYER_LED), (x(1), 694.0), (50.0, 26.0));
+    layer.caption = Some("Layer");
+    out.push(layer);
+    let mut exit = base(CtlKind::Button, true, K2_EXIT, "Exit Setup".into(), Some(K2_EXIT_LED), (x(2), 694.0), (50.0, 26.0));
+    exit.caption = Some("Exit");
+    exit.led_hint = Some("Diese Taste hat nur eine LED-Farbe.");
+    out.push(exit);
+    out
+}
+
+/// `value` from `encode`: 0 off, 1 red, 2 amber, 3 green.
+fn k2_led_message(channel: u8, index: usize, value: u8) -> Vec<u8> {
+    let ch = channel & 0x0F;
+    if index == K2_LAYER_LED {
+        return match value {
+            0 => vec![0x80 | ch, K2_LAYER, 0x7F],
+            v => vec![0x90 | ch, K2_LAYER + 4 * (v.min(3) - 1), 0x7F],
+        };
+    }
+    let note = match index {
+        0..4 => K2_ENCODER_PUSH + index as u8,
+        4..16 => K2_TOP_ROWS[(index - 4) / 4] + ((index - 4) % 4) as u8,
+        16..32 => K2_GRID_ROWS[(index - 16) / 4] + ((index - 16) % 4) as u8,
+        // The exit button has one colour; +36 would hit another button.
+        _ => K2_EXIT,
+    };
+    match value {
+        0 => vec![0x80 | ch, note, 0x7F],
+        _ if index == K2_EXIT_LED => vec![0x90 | ch, note, 0x7F],
+        v => vec![0x90 | ch, note + 36 * (v.min(3) - 1), 0x7F],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,8 +644,35 @@ mod tests {
     }
 
     #[test]
+    fn k2_matches_mixxx_map_and_led_colours() {
+        let m = Model::XoneK2;
+        assert_eq!(Model::of("XONE:K2"), Some(m));
+        let find = |name: &str| m.controls().into_iter().find(|c| c.name == name).unwrap();
+        assert_eq!((find("Fader 1").number, find("Poti 12").number), (16, 15));
+        assert_eq!((find("Taste 1").number, find("Taste 12").number), (48, 43));
+        assert_eq!((find("Raster 1").number, find("Raster 16").number), (36, 27));
+        let b = find("Taste 1").led.unwrap();
+        assert_eq!(m.led_message(8, b, m.encode(3, 0)), vec![0x98, 48, 127]);
+        assert_eq!(m.led_message(8, b, m.encode(3, 3)), vec![0x98, 84, 127]);
+        assert_eq!(m.led_message(8, b, m.encode(0, 3)), vec![0x98, 120, 127]);
+        assert_eq!(m.led_message(8, b, m.encode(0, 0)), vec![0x88, 48, 127]);
+        assert_eq!(m.led_message(14, K2_LAYER_LED, m.encode(0, 3)), vec![0x9E, 20, 127]);
+        // The exit LED stays on its own note, whatever the colour.
+        assert_eq!(m.led_message(14, K2_EXIT_LED, m.encode(0, 3)), vec![0x9E, 15, 127]);
+        // No colour note of any button lands on another control's note.
+        let notes: BTreeSet<u8> = m.controls().iter().filter(|c| c.note).map(|c| c.number).collect();
+        for ctl in m.controls() {
+            let Some(i) = ctl.led else { continue };
+            for v in 1..=3 {
+                let msg = m.led_message(0, i, v);
+                assert!(msg[1] == ctl.number || i == K2_LAYER_LED || !notes.contains(&msg[1]), "{}", ctl.name);
+            }
+        }
+    }
+
+    #[test]
     fn leds_are_unique_per_model() {
-        for m in [Model::LaunchControlXl, Model::MidiMix, Model::ApcMiniMk2] {
+        for m in [Model::LaunchControlXl, Model::MidiMix, Model::ApcMiniMk2, Model::XoneK2] {
             let mut seen = BTreeSet::new();
             for ctl in m.controls() {
                 if let Some(i) = ctl.led {
