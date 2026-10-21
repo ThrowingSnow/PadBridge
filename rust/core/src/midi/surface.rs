@@ -231,9 +231,17 @@ pub struct SurfaceBinding {
     pub number: u8,
     /// Buttons only.
     pub mode: ButtonMode,
+    /// Knobs: the LED colour. Buttons: the colour while pressed (momentary)
+    /// or switched on (toggle).
     pub led: LedColour,
     /// Knobs only.
     pub led_mode: LedMode,
+    /// Buttons: show `led` dimmed (devices that can dim).
+    pub led_dim: bool,
+    /// Buttons: the colour at rest; Off keeps the LED dark as before.
+    pub led_idle: LedColour,
+    /// Buttons: show `led_idle` dimmed.
+    pub led_idle_dim: bool,
 }
 
 impl SurfaceBinding {

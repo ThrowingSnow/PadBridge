@@ -379,7 +379,13 @@ fn binding_editor(ui: &mut egui::Ui, model: Model, ctl: &Ctl, key: SurfaceKey, m
         });
     }
     let colour = ctl.led.is_some_and(|i| model.colour_led(i));
-    if ctl.led.is_some() && !colour {
+    let dimmable = ctl.led.is_some_and(|i| model.dimmable_led(i));
+    if ctl.led.is_some() && button {
+        changed |= button_led_rows(ui, b, colour, dimmable);
+        if let Some(text) = ctl.led_hint {
+            hint(ui, text);
+        }
+    } else if ctl.led.is_some() && !colour {
         ui.horizontal(|ui| {
             ui.label("LED");
             changed |= ui.selectable_value(&mut b.led, LedColour::Off, "aus").changed();
@@ -433,6 +439,37 @@ fn binding_editor(ui: &mut egui::Ui, model: Model, ctl: &Ctl, key: SurfaceKey, m
             changed = true;
         }
     }
+    changed
+}
+
+/// A button's LED: one row for pressed (or switched on), one for at rest.
+/// The same colour in both rows keeps it lit all the time.
+fn button_led_rows(ui: &mut egui::Ui, b: &mut SurfaceBinding, colour: bool, dimmable: bool) -> bool {
+    let mut changed = false;
+    let active = if b.mode == ButtonMode::Toggle { "LED an" } else { "LED gedrückt" };
+    for (title, led, dim) in [(active, &mut b.led, &mut b.led_dim), ("LED in Ruhe", &mut b.led_idle, &mut b.led_idle_dim)] {
+        ui.horizontal(|ui| {
+            ui.label(title);
+            if colour {
+                for c in LedColour::ALL {
+                    let text = egui::RichText::new(led_name(c)).color(led_colour(c, 3).unwrap_or(ui.visuals().text_color()));
+                    changed |= ui.selectable_value(led, c, text).changed();
+                }
+                if dimmable && *led != LedColour::Off {
+                    changed |= ui.checkbox(dim, "gedimmt").changed();
+                }
+            } else {
+                changed |= ui.selectable_value(led, LedColour::Off, "aus").changed();
+                // Any colour means "on"; the LED has only one.
+                let mut on = *led != LedColour::Off;
+                if ui.selectable_value(&mut on, true, "an").clicked() && *led == LedColour::Off {
+                    *led = LedColour::Yellow;
+                    changed = true;
+                }
+            }
+        });
+    }
+    hint(ui, "In Ruhe = nicht gedrückt bzw. ausgeschaltet. Gleiche Einstellung in beiden Zeilen: immer an.");
     changed
 }
 
@@ -595,7 +632,16 @@ fn button(d: &Painter, r: Rect, st: &SurfaceState, key: SurfaceKey, look: &Look,
         Some(b) if b.mode == ButtonMode::Toggle => look.toggled,
         _ => held,
     };
-    let fill = if lit { look.accent(127) } else { Color32::from_gray(55) };
+    // The LED as set for this state: pressed/on or at rest (dimmed lighter).
+    let level = |dim: bool| if dim { 1 } else { 3 };
+    let fill = match look.binding {
+        Some(b) if lit && b.led != LedColour::Off => led_colour(b.led, level(b.led_dim)).unwrap_or(look.accent(127)),
+        Some(b) if !lit && b.led_idle != LedColour::Off => {
+            led_colour(b.led_idle, level(b.led_idle_dim)).unwrap_or(Color32::from_gray(55))
+        }
+        _ if lit => look.accent(127),
+        _ => Color32::from_gray(55),
+    };
     let fill = blend(fill, Color32::WHITE, look.flash.unwrap_or(0.0) * 0.3);
     let corner = CornerRadius::same((4.0 * d.s) as u8);
     d.p.rect_filled(r, corner, fill);

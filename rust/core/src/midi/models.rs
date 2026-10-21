@@ -136,6 +136,17 @@ impl Model {
         }
     }
 
+    /// LED `index` has brightness levels (for "gedimmt").
+    pub fn dimmable_led(self, index: usize) -> bool {
+        match self {
+            Model::LaunchControlXl => true,
+            Model::ApcMiniMk2 => index < 64,
+            // The K2 has no brightness; which Push 2 buttons are RGB and which
+            // white is not documented, so a dim value could show a colour.
+            Model::MidiMix | Model::XoneK2 | Model::Push2 => false,
+        }
+    }
+
     /// Size of the drawing in units.
     pub fn body(self) -> (f32, f32) {
         match self {
@@ -248,7 +259,8 @@ impl Model {
                     ButtonMode::Toggle => toggled.contains(&key),
                     ButtonMode::Momentary => value.is_some_and(|v| v.on && v.value > 0),
                 };
-                scaled(b.led, if lit { 3 } else { 0 })
+                let (colour, dim) = if lit { (b.led, b.led_dim) } else { (b.led_idle, b.led_idle_dim) };
+                scaled(colour, if dim && self.dimmable_led(index) { 1 } else { 3 })
             } else {
                 let v = value.map_or(0, |v| v.value);
                 match b.led_mode {
@@ -754,6 +766,32 @@ mod tests {
         assert_eq!(m.leds(&mapping, &st, &toggled, 8)[24], 0x0C);
         toggled.insert(ctl.input(8));
         assert_eq!(m.leds(&mapping, &st, &toggled, 8)[24], 0x3C);
+    }
+
+    #[test]
+    fn button_led_at_rest_and_active() {
+        let m = Model::LaunchControlXl;
+        let ctl = m.controls().into_iter().find(|c| c.name == "Track Focus 1").unwrap();
+        let mut mapping = DeviceMapping { enabled: true, ..Default::default() };
+        let b = mapping.binding_mut(ctl.input(8), true);
+        b.led = LedColour::Red;
+        b.led_idle = LedColour::Green;
+        b.led_idle_dim = true;
+        let mut st = SurfaceState::default();
+        let toggled = BTreeSet::new();
+        // At rest: green, dimmed (level 1).
+        assert_eq!(m.leds(&mapping, &st, &toggled, 8)[24], m.encode(0, 1));
+        // Pressed: red, full.
+        st.apply(&[0x98, ctl.number, 127]);
+        assert_eq!(m.leds(&mapping, &st, &toggled, 8)[24], m.encode(3, 0));
+        // A device without brightness shows the idle colour at full level.
+        let k2 = Model::XoneK2;
+        let t = k2.controls().into_iter().find(|c| c.name == "Taste 1").unwrap();
+        let mut mk = DeviceMapping { enabled: true, ..Default::default() };
+        let b = mk.binding_mut(t.input(8), true);
+        b.led_idle = LedColour::Green;
+        b.led_idle_dim = true;
+        assert_eq!(k2.leds(&mk, &SurfaceState::default(), &toggled, 8)[t.led.unwrap()], k2.encode(0, 3));
     }
 
     #[test]
