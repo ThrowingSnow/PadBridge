@@ -36,6 +36,8 @@ cargo test -p padbridge-core
 cargo build --release -p padbridge          # Linux: needs alsa-lib headers
 MACOSX_DEPLOYMENT_TARGET=10.13 cargo build --release -p padbridge   # macOS
 scripts/build-windows.sh                    # Windows .exe, cross-built (mingw-w64)
+scripts/build-linux.sh                      # portable Linux binary (Docker, glibc 2.30)
+scripts/build-remote.sh <ssh-host>          # Linux + Windows on another machine with Docker -> target/dist/
 ```
 
 ## Status

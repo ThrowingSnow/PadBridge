@@ -19,6 +19,8 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-too
 ENV PATH=/root/.cargo/bin:$PATH
 DOCKERFILE
 
+# Made here, so it belongs to this user and not to root in the container.
+mkdir -p target/linux-portable
 # The crate cache lives in a volume, so later builds do not download again.
 docker run --rm \
     -v "$PWD":/src -w /src \
